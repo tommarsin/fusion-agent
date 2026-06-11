@@ -1,0 +1,14 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+.greennode.json
+.agentbase/
+.agentbase-state.json
+*.credentials.json
+.git/
+.gitignore
+# *.md intentionally removed — knowledge_base/ contains markdown corpus needed in Docker image
+!knowledge_base/**
