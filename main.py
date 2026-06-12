@@ -34,6 +34,14 @@ async def lifespan(app: FastAPI):
     from rag import loader, retriever
 
     retriever.set_kb_dir(KB_DIR)
+
+    # tools/ingest.py added by item 3.3 — graceful if not yet present
+    try:
+        from tools import ingest as ingest_tool
+        ingest_tool.set_kb_dir(KB_DIR)
+    except ImportError:
+        logger.info("tools.ingest not found — /ingest và /approve stubs (item 3.3 pending)")
+
     chunks = loader.load_all_chunks(KB_DIR)
     retriever.build_index(chunks)
     logger.info("RAG layer sẵn sàng.")
@@ -94,17 +102,142 @@ async def invocations(request: Request):
 
 @app.post("/scan")
 async def scan(request: Request):
-    return JSONResponse(status_code=501, content={"error": "not implemented"})
+    """
+    POST /scan — Content Scanner 4 bước (Item 3.2).
+
+    Body JSON:
+      {
+        "content": "...",
+        "platforms": ["meta", "tiktok", "google", "store", "website", "group"],
+        "tenant_id": null,
+        "campaign_id": null,
+        "image_description": null
+      }
+    Header: X-Role (user | mod | admin)
+    """
+    from tools.scanner import scan_content
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=422, content={"error": "invalid JSON body"})
+
+    content = (body.get("content") or "").strip()
+    if not content:
+        return JSONResponse(status_code=422, content={"error": "'content' is required"})
+
+    platforms = body.get("platforms") or []
+    if isinstance(platforms, str):
+        platforms = [platforms]
+
+    # Validate platform values
+    valid_platforms = {"meta", "tiktok", "google", "store", "website", "group"}
+    platforms = [p.lower().strip() for p in platforms if p.lower().strip() in valid_platforms]
+
+    tenant_id = body.get("tenant_id")
+    campaign_id = body.get("campaign_id")
+    image_description = body.get("image_description")
+    actor_role = request.headers.get("X-Role", "user").lower()
+
+    result = scan_content(
+        content=content,
+        platforms=platforms,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+        image_description=image_description,
+        actor_role=actor_role,
+    )
+    return JSONResponse(status_code=200, content=result)
 
 
 @app.post("/ingest")
 async def ingest(request: Request):
-    return JSONResponse(status_code=501, content={"error": "not implemented"})
+    """
+    POST /ingest — Authoring Engine + Web Fetch (Item 3.3).
+
+    Body JSON:
+      {
+        "source": "<URL hoặc text thô>",
+        "scope": "core|tenant|campaign",
+        "tenant_id": null,
+        "campaign_id": null,
+        "note": null,
+        "related_core_doc_id": null   -- khi rule tenant siết 1 core rule (siết-only)
+      }
+    Header: X-Role (Admin | Mod | User)
+
+    Routing:
+      - User          → 403
+      - Mod + core    → submission pending (Admin duyệt qua /approve)
+      - Mod + tenant  → rule live ngay + reindex
+      - Admin         → rule live ngay (bất kỳ scope) + reindex
+    """
+    from tools.ingest import handle_ingest
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=422, content={"error": "invalid JSON body"})
+
+    source = (body.get("source") or "").strip()
+    if not source:
+        return JSONResponse(status_code=422, content={"error": "'source' là bắt buộc (URL hoặc text)"})
+
+    scope = (body.get("scope") or "core").strip().lower()
+    tenant_id = body.get("tenant_id")
+    campaign_id = body.get("campaign_id")
+    note = body.get("note")
+    related_core_doc_id = body.get("related_core_doc_id")
+    actor_role = request.headers.get("X-Role", "User")
+
+    status_code, result = handle_ingest(
+        source=source,
+        scope=scope,
+        actor_role=actor_role,
+        tenant_id=tenant_id,
+        campaign_id=campaign_id,
+        note=note,
+        related_core_doc_id=related_core_doc_id,
+    )
+    return JSONResponse(status_code=status_code, content=result)
 
 
 @app.post("/approve")
 async def approve(request: Request):
-    return JSONResponse(status_code=501, content={"error": "not implemented"})
+    """
+    POST /approve — Duyệt/từ chối submission (Item 3.3, Admin only).
+
+    Body JSON:
+      {
+        "submission_id": 1,
+        "decision": "approve|reject"
+      }
+    Header: X-Role: Admin
+
+    Khi approve: chạy authoring pipeline → insert rule core → reindex.
+    """
+    from tools.ingest import handle_approve
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=422, content={"error": "invalid JSON body"})
+
+    submission_id = body.get("submission_id")
+    decision = (body.get("decision") or "").strip().lower()
+    actor_role = request.headers.get("X-Role", "User")
+
+    if not submission_id or not isinstance(submission_id, int):
+        return JSONResponse(status_code=422, content={"error": "'submission_id' phải là số nguyên"})
+    if not decision:
+        return JSONResponse(status_code=422, content={"error": "'decision' là bắt buộc (approve|reject)"})
+
+    status_code, result = handle_approve(
+        submission_id=submission_id,
+        decision=decision,
+        actor_role=actor_role,
+    )
+    return JSONResponse(status_code=status_code, content=result)
 
 
 @app.post("/checklist")
