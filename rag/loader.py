@@ -199,6 +199,7 @@ def load_db_rules() -> list[dict]:
     db_name = os.environ.get("DB_NAME", "fusion_agent").strip()
     db_user = os.environ.get("DB_USER", "").strip()
     db_pass = os.environ.get("DB_PASSWORD", "").strip()
+    db_sslmode = os.environ.get("DB_SSLMODE", "prefer").strip()
 
     if not db_host or not db_user:
         logger.warning("DB_HOST hoặc DB_USER chưa set — DB loader bỏ qua, dùng KB md only")
@@ -211,6 +212,7 @@ def load_db_rules() -> list[dict]:
             dbname=db_name,
             user=db_user,
             password=db_pass,
+            sslmode=db_sslmode,
             connect_timeout=5,
         )
         cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
