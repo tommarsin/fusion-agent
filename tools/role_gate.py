@@ -23,9 +23,10 @@ _ROLE_RANK: dict[str, int] = {"User": 0, "Mod": 1, "Admin": 2}
 
 # Minimum role rank cần thiết — paths không có = mở cho tất cả
 _MIN_RANK: dict[str, int] = {
-    "/ingest": 1,   # Mod+
-    "/approve": 2,  # Admin only
-    "/audit": 2,    # Admin only
+    "/ingest": 1,        # Mod+
+    "/approve": 2,       # Admin only
+    "/audit": 2,         # Admin only
+    "/submissions": 1,   # Mod+ (item 4.1)
 }
 
 # Paths mà middleware tự ghi audit_log (ingest/approve tự ghi trong handler)

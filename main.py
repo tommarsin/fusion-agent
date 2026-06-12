@@ -5,6 +5,7 @@ FastAPI server, binds 0.0.0.0:8080 (AgentBase platform requirement).
 Routes implemented here are stubs (HTTP 501). Logic filled in per WS3 items:
   3.1 → /ask   3.2 → /scan   3.3 → /ingest + /approve
   3.4 → /checklist   3.5 → role gate + /audit
+  4.1 → /ui (static demo UI) + /submissions (list pending)
 """
 
 import logging
@@ -14,7 +15,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 import uvicorn
 
 load_dotenv()
@@ -61,6 +63,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── CORS (item 4.1 — POC, allow all origins) ─────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # ── Role gate + audit middleware (item 3.5) ───────────────────────────────────
 try:
     from tools.role_gate import RoleGateMiddleware
@@ -74,6 +84,38 @@ except ImportError:
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# ── Demo UI (item 4.1) ────────────────────────────────────────────────────────
+_UI_FILE = Path(__file__).parent / "frontend" / "index.html"
+
+
+@app.get("/ui", include_in_schema=False)
+async def serve_ui():
+    """Serve demo UI — không ghi audit, không gate role."""
+    if not _UI_FILE.exists():
+        return JSONResponse(status_code=404, content={"error": "UI file not found. Run item 4.1 setup."})
+    return FileResponse(str(_UI_FILE), media_type="text/html")
+
+
+# ── Submissions list (item 4.1 — Mod+ xem pending để duyệt) ──────────────────
+@app.get("/submissions")
+async def list_submissions_route(request: Request):
+    """
+    GET /submissions — liệt kê submissions (Mod+).
+    Role gate enforced by RoleGateMiddleware (min rank Mod).
+    Query param: status (pending|approved|rejected|all), default pending.
+    """
+    from db.store import list_submissions
+
+    status_param = request.query_params.get("status", "pending").strip().lower()
+    if status_param == "all":
+        status_param = None
+    elif status_param not in ("pending", "approved", "rejected"):
+        status_param = "pending"
+
+    submissions = list_submissions(status=status_param)
+    return JSONResponse(status_code=200, content={"submissions": submissions, "count": len(submissions)})
 
 
 # ── /ask + /invocations (item 3.1) ───────────────────────────────────────────
