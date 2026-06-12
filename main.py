@@ -7,7 +7,11 @@ Routes implemented here are stubs (HTTP 501). Logic filled in per WS3 items:
   3.4 → /checklist   3.5 → role gate + /audit
 """
 
+import logging
 import os
+from contextlib import asynccontextmanager
+from pathlib import Path
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -15,7 +19,32 @@ import uvicorn
 
 load_dotenv()
 
-app = FastAPI(title="Fusion Agent — Game Content Compliance AI System")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+KB_DIR = str(Path(__file__).parent / "knowledge_base")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ── Startup: load KB + build BM25 index ──────────────────────────────────
+    from rag import loader, retriever
+
+    retriever.set_kb_dir(KB_DIR)
+    chunks = loader.load_all_chunks(KB_DIR)
+    retriever.build_index(chunks)
+    logger.info("RAG layer sẵn sàng.")
+    yield
+    # ── Shutdown ──────────────────────────────────────────────────────────────
+
+
+app = FastAPI(
+    title="Fusion Agent — Game Content Compliance AI System",
+    lifespan=lifespan,
+)
 
 
 # ── Platform hard requirement ─────────────────────────────────────────────────
