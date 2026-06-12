@@ -242,7 +242,64 @@ async def approve(request: Request):
 
 @app.post("/checklist")
 async def checklist(request: Request):
-    return JSONResponse(status_code=501, content={"error": "not implemented"})
+    """
+    POST /checklist — Pre-publish checklist generator (Item 3.4).
+
+    Body JSON:
+      {
+        "content": "...",                    -- nội dung cần đăng (bắt buộc)
+        "platforms": ["meta", "tiktok", ...],
+        "activity_description": "...",       -- mô tả hoạt động (tùy chọn, bổ sung context)
+        "tenant_id": null,
+        "campaign_id": null
+      }
+    Header: X-Role (user | mod | admin)
+
+    Returns:
+      {
+        "checklist": [{"item": str, "risk": "high|medium|low", "doc_id": str}, ...]
+      }
+    """
+    from tools.checklist import generate_checklist
+    from rag import retriever
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=422, content={"error": "invalid JSON body"})
+
+    content = (body.get("content") or "").strip()
+    if not content:
+        return JSONResponse(status_code=422, content={"error": "'content' là bắt buộc"})
+
+    platforms = body.get("platforms") or []
+    if isinstance(platforms, str):
+        platforms = [platforms]
+
+    valid_platforms = {"meta", "tiktok", "google", "store", "website", "group"}
+    platforms = [p.lower().strip() for p in platforms if p.lower().strip() in valid_platforms]
+
+    activity_description = (body.get("activity_description") or "").strip()
+    tenant_id = body.get("tenant_id")
+    campaign_id = body.get("campaign_id")
+
+    # Retrieve KB chunks for LLM expansion context
+    query = f"{content[:200]} {activity_description}".strip()
+    chunks = retriever.retrieve(query, tenant_id=tenant_id, campaign_id=campaign_id,
+                                platforms=platforms or None, top_k=4)
+
+    context = {
+        "content": content,
+        "platforms": platforms,
+        "violations": [],           # No violations — this is a standalone checklist call
+        "activity_description": activity_description,
+        "tenant_id": tenant_id,
+        "chunks": chunks,
+        # _extra_items NOT set → generate_checklist will call LLM expansion
+    }
+
+    checklist_items = generate_checklist(context)
+    return JSONResponse(status_code=200, content={"checklist": checklist_items})
 
 
 @app.get("/audit")
