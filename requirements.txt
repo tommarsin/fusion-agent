@@ -2,6 +2,7 @@ greennode-agentbase
 # langchain v1.1.x removed create_agent; pin >=1.2.0 where it was restored
 langchain>=1.2.0,<2.0.0
 langchain-openai>=1.1.0,<2.0.0
+openai>=1.0.0
 python-dotenv
 fastapi>=0.115.0,<1.0.0
 uvicorn[standard]>=0.32.0,<1.0.0

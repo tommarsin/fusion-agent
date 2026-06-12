@@ -53,21 +53,43 @@ async def health():
     return {"status": "ok"}
 
 
-# ── AI endpoints (stubs — WS3 will fill these) ───────────────────────────────
-async def _ask_stub(request: Request) -> JSONResponse:
-    """Shared handler for /ask and /invocations alias."""
-    return JSONResponse(status_code=501, content={"error": "not implemented"})
+# ── /ask + /invocations (item 3.1) ───────────────────────────────────────────
+
+async def _handle_ask(request: Request) -> JSONResponse:
+    """Shared handler cho /ask và /invocations alias."""
+    from tools.ask import answer_question
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=422, content={"error": "invalid JSON body"})
+
+    question = (body.get("question") or "").strip()
+    if not question:
+        return JSONResponse(status_code=422, content={"error": "'question' is required"})
+
+    tenant_id = body.get("tenant_id")  # int | None
+    platforms = body.get("platforms")  # list[str] | None
+    actor_role = request.headers.get("X-Role", "user").lower()
+
+    result = answer_question(
+        question=question,
+        tenant_id=tenant_id,
+        platforms=platforms,
+        actor_role=actor_role,
+    )
+    return JSONResponse(status_code=200, content=result)
 
 
 @app.post("/ask")
 async def ask(request: Request):
-    return await _ask_stub(request)
+    return await _handle_ask(request)
 
 
 @app.post("/invocations")
 async def invocations(request: Request):
     """AgentBase SDK convention alias → delegates to /ask handler."""
-    return await _ask_stub(request)
+    return await _handle_ask(request)
 
 
 @app.post("/scan")
