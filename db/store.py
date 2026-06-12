@@ -371,6 +371,75 @@ def list_submissions(status: Optional[str] = None) -> list:
 # ── Audit ─────────────────────────────────────────────────────────────────────
 
 
+def ensure_checklist_action() -> None:
+    """Mở rộng audit_log CHECK constraint để nhận 'checklist'. Idempotent."""
+    try:
+        conn = _get_conn()
+        cur = conn.cursor()
+
+        # Check xem 'checklist' đã trong constraint chưa
+        cur.execute(
+            """
+            SELECT check_clause FROM information_schema.check_constraints
+            WHERE constraint_name = 'audit_log_action_check'
+            """
+        )
+        row = cur.fetchone()
+        if row and "checklist" not in (row[0] or ""):
+            cur.execute(
+                "ALTER TABLE audit_log DROP CONSTRAINT IF EXISTS audit_log_action_check"
+            )
+            cur.execute(
+                """
+                ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_check
+                CHECK (action = ANY(
+                    ARRAY['ask','scan','ingest','approve','checklist']
+                ))
+                """
+            )
+            conn.commit()
+
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.debug(f"ensure_checklist_action (non-fatal): {e}")
+
+
+def list_audit_log(limit: int = 50) -> list:
+    """Trả về audit_log gần nhất, DESC theo created_at."""
+    try:
+        conn = _get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, actor_role, tenant_id, action, input_hash, verdict, summary, created_at
+            FROM audit_log
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return [
+            {
+                "id": r[0],
+                "actor_role": r[1],
+                "tenant_id": r[2],
+                "action": r[3],
+                "input_hash": r[4],
+                "verdict": r[5],
+                "summary": r[6],
+                "created_at": r[7].isoformat() if r[7] else None,
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.error(f"list_audit_log: {e}")
+        return []
+
+
 def insert_audit(
     actor_role: str,
     action: str,

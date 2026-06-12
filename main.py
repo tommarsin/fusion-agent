@@ -42,6 +42,13 @@ async def lifespan(app: FastAPI):
     except ImportError:
         logger.info("tools.ingest not found — /ingest và /approve stubs (item 3.3 pending)")
 
+    # Ensure audit_action_enum has 'checklist' (item 3.5)
+    try:
+        from db.store import ensure_checklist_action
+        ensure_checklist_action()
+    except Exception as e:
+        logger.debug(f"ensure_checklist_action startup (non-fatal): {e}")
+
     chunks = loader.load_all_chunks(KB_DIR)
     retriever.build_index(chunks)
     logger.info("RAG layer sẵn sàng.")
@@ -53,6 +60,14 @@ app = FastAPI(
     title="Fusion Agent — Game Content Compliance AI System",
     lifespan=lifespan,
 )
+
+# ── Role gate + audit middleware (item 3.5) ───────────────────────────────────
+try:
+    from tools.role_gate import RoleGateMiddleware
+    app.add_middleware(RoleGateMiddleware)
+    logger.info("RoleGateMiddleware đã đăng ký.")
+except ImportError:
+    logger.warning("tools.role_gate không tìm thấy — role gate bỏ qua.")
 
 
 # ── Platform hard requirement ─────────────────────────────────────────────────
@@ -304,7 +319,22 @@ async def checklist(request: Request):
 
 @app.get("/audit")
 async def audit(request: Request):
-    return JSONResponse(status_code=501, content={"error": "not implemented"})
+    """
+    GET /audit — Admin only: danh sách audit_log gần nhất (Item 3.5).
+    Role gate enforced by RoleGateMiddleware trước khi đến đây.
+
+    Query param: limit (default 50, max 200).
+    """
+    from db.store import list_audit_log
+
+    try:
+        limit = int(request.query_params.get("limit", 50))
+        limit = min(max(limit, 1), 200)
+    except (ValueError, TypeError):
+        limit = 50
+
+    entries = list_audit_log(limit=limit)
+    return JSONResponse(status_code=200, content={"entries": entries, "count": len(entries)})
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
