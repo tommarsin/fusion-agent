@@ -335,7 +335,7 @@ def list_submissions(status: Optional[str] = None) -> list:
                 """
                 SELECT id, link, note, submitted_by_role, tenant_id, status, created_at, raw_text
                 FROM rule_submissions
-                WHERE status = %s::submission_status_enum
+                WHERE status::text = %s
                 ORDER BY created_at DESC
                 """,
                 (status,),
