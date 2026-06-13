@@ -24,6 +24,7 @@ _ROLE_RANK: dict[str, int] = {"User": 0, "Mod": 1, "Admin": 2}
 # Minimum role rank cần thiết — paths không có = mở cho tất cả
 _MIN_RANK: dict[str, int] = {
     "/ingest": 1,        # Mod+
+    "/draft": 1,         # Mod+ (item 7.4 guided authoring)
     "/approve": 2,       # Admin only
     "/audit": 2,         # Admin only
     "/submissions": 1,   # Mod+ (item 4.1)

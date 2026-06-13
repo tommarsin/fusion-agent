@@ -194,6 +194,11 @@ async def scan(request: Request):
     tenant_id = body.get("tenant_id")
     campaign_id = body.get("campaign_id")
     image_description = body.get("image_description")
+    images = body.get("images")
+    if isinstance(images, list):
+        images = [img for img in images if isinstance(img, str) and len(img) > 100][:5]
+    else:
+        images = None
     actor_role = request.headers.get("X-Role", "user").lower()
 
     result = scan_content(
@@ -202,6 +207,7 @@ async def scan(request: Request):
         tenant_id=tenant_id,
         campaign_id=campaign_id,
         image_description=image_description,
+        images=images,
         actor_role=actor_role,
     )
     return JSONResponse(status_code=200, content=result)
@@ -357,6 +363,52 @@ async def checklist(request: Request):
 
     checklist_items = generate_checklist(context)
     return JSONResponse(status_code=200, content={"checklist": checklist_items})
+
+
+@app.post("/draft")
+async def draft(request: Request):
+    """
+    POST /draft — Generate draft from summary (Item 7.4 guided authoring).
+
+    Body JSON:
+      {
+        "summary": "tóm tắt ý định...",
+        "content_layer": "operating_rule|daily_tool|case_study|legal_source|platform_policy"
+      }
+    """
+    from tools.authoring import generate_draft_from_summary
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=422, content={"error": "invalid JSON body"})
+
+    summary = (body.get("summary") or "").strip()
+    content_layer = (body.get("content_layer") or "").strip()
+
+    if not summary:
+        return JSONResponse(status_code=422, content={"error": "'summary' là bắt buộc"})
+    if not content_layer:
+        return JSONResponse(status_code=422, content={"error": "'content_layer' là bắt buộc"})
+
+    result = generate_draft_from_summary(summary=summary, content_layer=content_layer)
+
+    status_code = 200 if result["success"] else 500
+    return JSONResponse(status_code=status_code, content=result)
+
+
+@app.get("/rules")
+async def list_rules_route(request: Request):
+    """GET /rules — danh sách custom rules từ DB (tất cả role)."""
+    from db.store import list_rules
+
+    content_layer = request.query_params.get("content_layer")
+    scope = request.query_params.get("scope")
+    tenant_id_str = request.query_params.get("tenant_id")
+    tenant_id = int(tenant_id_str) if tenant_id_str else None
+
+    rules = list_rules(content_layer=content_layer, scope=scope, tenant_id=tenant_id)
+    return JSONResponse(status_code=200, content={"rules": rules, "count": len(rules)})
 
 
 @app.get("/audit")

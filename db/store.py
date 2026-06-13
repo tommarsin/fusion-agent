@@ -333,7 +333,7 @@ def list_submissions(status: Optional[str] = None) -> list:
         if status:
             cur.execute(
                 """
-                SELECT id, link, note, submitted_by_role, tenant_id, status, created_at
+                SELECT id, link, note, submitted_by_role, tenant_id, status, created_at, raw_text
                 FROM rule_submissions
                 WHERE status = %s::submission_status_enum
                 ORDER BY created_at DESC
@@ -343,7 +343,7 @@ def list_submissions(status: Optional[str] = None) -> list:
         else:
             cur.execute(
                 """
-                SELECT id, link, note, submitted_by_role, tenant_id, status, created_at
+                SELECT id, link, note, submitted_by_role, tenant_id, status, created_at, raw_text
                 FROM rule_submissions
                 ORDER BY created_at DESC
                 """
@@ -360,6 +360,8 @@ def list_submissions(status: Optional[str] = None) -> list:
                 "tenant_id": r[4],
                 "status": r[5],
                 "created_at": r[6].isoformat() if r[6] else None,
+                "scope": "core" if r[4] is None else "tenant",
+                "content": (r[7] or r[1] or "")[:200],
             }
             for r in rows
         ]
@@ -403,6 +405,60 @@ def ensure_checklist_action() -> None:
         conn.close()
     except Exception as e:
         logger.debug(f"ensure_checklist_action (non-fatal): {e}")
+
+
+def list_rules(content_layer: Optional[str] = None, scope: Optional[str] = None,
+               tenant_id: Optional[int] = None, status: str = "approved") -> list:
+    """Trả danh sách rules từ DB (custom rules nạp qua /ingest)."""
+    try:
+        conn = _get_conn()
+        cur = conn.cursor()
+        clauses = ["status = %s"]
+        params: list = [status]
+        if content_layer:
+            clauses.append("content_layer::text = %s")
+            params.append(content_layer)
+        if scope:
+            clauses.append("scope::text = %s")
+            params.append(scope)
+        if tenant_id is not None:
+            clauses.append("tenant_id = %s")
+            params.append(tenant_id)
+        where = " AND ".join(clauses)
+        cur.execute(
+            f"""
+            SELECT id, doc_id, content_layer, scope, tenant_id, title,
+                   platforms, source_url, related_core_doc_id, created_at,
+                   body_md
+            FROM rules
+            WHERE {where}
+            ORDER BY created_at DESC
+            LIMIT 100
+            """,
+            params,
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return [
+            {
+                "id": r[0],
+                "doc_id": r[1],
+                "content_layer": r[2],
+                "scope": r[3],
+                "tenant_id": r[4],
+                "title": r[5],
+                "platforms": r[6] if isinstance(r[6], list) else [],
+                "source_url": r[7],
+                "related_core_doc_id": r[8],
+                "created_at": r[9].isoformat() if r[9] else None,
+                "body_md": r[10] or "",
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.error(f"list_rules: {e}")
+        return []
 
 
 def list_audit_log(limit: int = 50) -> list:

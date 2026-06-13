@@ -378,3 +378,125 @@ def run_authoring_pipeline(
         "source_url": final_source_url,
         "related_doc_ids": extracted.get("related_doc_ids", []),
     }
+
+
+# ── Draft generation from summary ───────────────────────────────────────────
+
+LAYER_TEMPLATES = {
+    "operating_rule": {
+        "label": "Luật vận hành",
+        "sections": ["Phạm vi áp dụng", "Quy định chi tiết", "Lý do / Căn cứ pháp lý", "Chế tài xử lý"],
+        "placeholder": "## Phạm vi áp dụng\n\n## Quy định chi tiết\n\n## Lý do / Căn cứ pháp lý\n\n## Chế tài xử lý\n",
+    },
+    "daily_tool": {
+        "label": "Daily tool / Checklist",
+        "sections": ["Mục đích", "Khi nào sử dụng", "Các bước thực hiện", "Mẫu output / Kết quả mong đợi"],
+        "placeholder": "## Mục đích\n\n## Khi nào sử dụng\n\n## Các bước thực hiện\n\n## Mẫu output / Kết quả mong đợi\n",
+    },
+    "case_study": {
+        "label": "Case study",
+        "sections": ["Bối cảnh tình huống", "Vi phạm / Sự cố", "Hậu quả", "Bài học rút ra", "Tài liệu liên quan"],
+        "placeholder": "## Bối cảnh tình huống\n\n## Vi phạm / Sự cố\n\n## Hậu quả\n\n## Bài học rút ra\n\n## Tài liệu liên quan\n",
+    },
+    "legal_source": {
+        "label": "Nguồn luật pháp",
+        "sections": ["Thông tin cơ bản", "Tóm tắt nội dung quan trọng", "Yêu cầu bắt buộc", "Điều cấm"],
+        "placeholder": "## Thông tin cơ bản\n- Cơ quan ban hành:\n- Ngày hiệu lực:\n\n## Tóm tắt nội dung quan trọng\n\n## Yêu cầu bắt buộc\n\n## Điều cấm\n",
+    },
+    "platform_policy": {
+        "label": "Policy nền tảng",
+        "sections": ["Thông tin cơ bản", "Tóm tắt nội dung quan trọng", "Yêu cầu bắt buộc", "Điều cấm"],
+        "placeholder": "## Thông tin cơ bản\n- Nền tảng:\n- Link gốc:\n\n## Tóm tắt nội dung quan trọng\n\n## Yêu cầu bắt buộc\n\n## Điều cấm\n",
+    },
+}
+
+_DRAFT_SYSTEM_PROMPT = (
+    "Bạn là chuyên gia soạn tài liệu compliance ngành game Việt Nam. "
+    "Nhiệm vụ: từ ý tóm tắt của người dùng, viết bản nháp đầy đủ theo đúng format cấu trúc yêu cầu. "
+    "Viết tiếng Việt, rõ ràng, chuyên nghiệp. Nội dung phải hữu ích và cụ thể — không viết placeholder chung chung."
+)
+
+_DRAFT_TEMPLATE = """Người dùng muốn tạo tài liệu loại **{layer_label}** ({content_layer}).
+
+Họ mô tả tóm tắt ý định như sau:
+---
+{summary}
+---
+
+Hãy viết bản nháp đầy đủ theo đúng cấu trúc sau (giữ nguyên heading ##):
+
+{structure}
+
+Quy tắc:
+- Viết nội dung CỤ THỂ dựa trên tóm tắt, KHÔNG để placeholder "điền vào đây"
+- Nếu thiếu thông tin, suy luận hợp lý từ ngữ cảnh ngành game/compliance VN
+- Trả về ĐÚNG format markdown với các heading ## như trên
+- KHÔNG bọc trong code fence
+- Độ dài: 300–800 từ
+"""
+
+
+def generate_draft_from_summary(summary: str, content_layer: str) -> dict:
+    """
+    Từ tóm tắt ngắn + loại tài liệu, sinh bản nháp đầy đủ đúng format.
+    Tái dụng _call_llm từ authoring engine.
+
+    Returns: {success, draft_text, content_layer, error}
+    """
+    if content_layer not in LAYER_TEMPLATES:
+        return {"success": False, "draft_text": "", "content_layer": content_layer,
+                "error": f"Loại tài liệu không hợp lệ: {content_layer}"}
+
+    tmpl = LAYER_TEMPLATES[content_layer]
+    structure = "\n".join(f"## {s}\n" for s in tmpl["sections"])
+
+    prompt = _DRAFT_TEMPLATE.format(
+        layer_label=tmpl["label"],
+        content_layer=content_layer,
+        summary=summary.strip(),
+        structure=structure,
+    )
+
+    for use_fallback in (False, True):
+        try:
+            from openai import OpenAI
+            api_key = os.environ.get("LLM_API_KEY", "").strip()
+            base_url = os.environ.get("LLM_BASE_URL",
+                                      "https://maas-llm-aiplatform-hcm.api.vngcloud.vn/v1").strip()
+            if use_fallback:
+                model = (os.environ.get("LLM_MODEL_AUTHORING", "")
+                         or os.environ.get("LLM_MODEL", "")).strip()
+            else:
+                model = os.environ.get("LLM_MODEL", "").strip()
+
+            if not api_key or not model:
+                raise RuntimeError("LLM_API_KEY hoặc LLM_MODEL chưa set")
+
+            client = OpenAI(api_key=api_key, base_url=base_url)
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": _DRAFT_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.4,
+                max_tokens=3000,
+            )
+            draft = response.choices[0].message.content or ""
+            draft = draft.strip()
+            # Remove markdown fences if LLM wraps
+            draft = re.sub(r"^```(?:markdown)?\s*\n?", "", draft, flags=re.MULTILINE)
+            draft = re.sub(r"\n?```\s*$", "", draft, flags=re.MULTILINE)
+
+            return {"success": True, "draft_text": draft.strip(),
+                    "content_layer": content_layer, "error": None}
+        except Exception as e:
+            if not use_fallback:
+                logger.warning(f"Draft LLM chính thất bại ({e}), thử fallback...")
+            else:
+                logger.error(f"Draft LLM thất bại: {e}")
+                return {"success": False, "draft_text": "", "content_layer": content_layer,
+                        "error": str(e)}
+
+    return {"success": False, "draft_text": "", "content_layer": content_layer,
+            "error": "Unexpected error"}

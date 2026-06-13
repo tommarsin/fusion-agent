@@ -718,6 +718,96 @@ def _write_audit_log(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# VISION DETECT — Gemma 4 31B (multimodal, MaaS)
+# ══════════════════════════════════════════════════════════════════════════════
+
+_VISION_MODEL = "google/gemma-4-31b-it"
+
+_VISION_DETECT_SYSTEM = """Bạn là AI kiểm duyệt hình ảnh marketing game tại Việt Nam.
+Nhiệm vụ: Phân tích hình ảnh để phát hiện nội dung vi phạm.
+
+CÁC LOẠI VI PHẠM CẦN PHÁT HIỆN TRONG ẢNH:
+- CCCD/CMND/giấy tờ tùy thân hiển thị trong ảnh (GSX-LEGAL-001) — red-line
+- Bản đồ hình dạng lãnh thổ Việt Nam không rõ Hoàng Sa/Trường Sa (GSX-OP-002 4A) — red-line
+- Nội dung cá độ/cờ bạc (GSX-OP-002 4E/4F) — red-line
+- Hình ảnh bạo lực, máu me quá mức (GSX-OP-002 4C)
+- Nội dung khiêu dâm, phản cảm (GSX-OP-002 4D)
+- Text trong ảnh chứa từ tuyệt đối: "nhất", "số 1", "best" (GSX-LEGAL-010)
+- Text trong ảnh chứa chửi tục (GSX-OP-002 4I)
+- Logo/thương hiệu bên thứ 3 chưa được phép (GSX-OP-008)
+- Nội dung nhạy cảm tôn giáo/dân tộc (GSX-OP-002 4B)
+
+FORMAT TRẢ VỀ — JSON ARRAY THUẦN TÚY (không markdown):
+[
+  {
+    "image_index": 0,
+    "rule_doc_id": "GSX-OP-002",
+    "quote": "mô tả ngắn phần vi phạm trong ảnh",
+    "reason": "giải thích tại sao vi phạm",
+    "severity": "redline|major|minor"
+  }
+]
+
+Nếu không phát hiện vi phạm: trả về []
+Giới hạn: tối đa 5 vi phạm mỗi ảnh. Chỉ trả JSON."""
+
+
+def _vision_detect(images: list[str], platforms: list[str]) -> list[dict]:
+    """Gọi Gemma 4 31B (vision) để phát hiện vi phạm trong ảnh."""
+    api_key = os.environ.get("LLM_API_KEY", "").strip()
+    base_url = os.environ.get("LLM_BASE_URL", "").strip()
+
+    if not api_key or not images:
+        return []
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key, base_url=base_url)
+
+        all_violations: list[dict] = []
+
+        for idx, img_b64 in enumerate(images[:5]):
+            if not img_b64 or not img_b64.strip():
+                continue
+
+            img_url = img_b64 if img_b64.startswith("data:") else f"data:image/png;base64,{img_b64}"
+
+            user_content = [
+                {"type": "text", "text": (
+                    f"Phân tích ảnh #{idx+1} (nền tảng đăng: {', '.join(platforms) if platforms else 'chưa xác định'}). "
+                    "Phát hiện vi phạm nếu có. Trả về JSON array."
+                )},
+                {"type": "image_url", "image_url": {"url": img_url}},
+            ]
+
+            try:
+                response = client.chat.completions.create(
+                    model=_VISION_MODEL,
+                    messages=[
+                        {"role": "system", "content": _VISION_DETECT_SYSTEM},
+                        {"role": "user", "content": user_content},
+                    ],
+                    temperature=0.0,
+                    max_tokens=600,
+                )
+                raw = (response.choices[0].message.content or "").strip()
+                violations = _parse_violations_json(raw)
+                for v in violations:
+                    v["image_index"] = idx
+                    v["source"] = "vision"
+                all_violations.extend(violations)
+            except Exception as e:
+                logger.warning(f"Vision detect ảnh #{idx+1} thất bại: {e}")
+                continue
+
+        return all_violations
+
+    except Exception as e:
+        logger.warning(f"Vision detect thất bại: {e}")
+        return []
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # MAIN ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -727,6 +817,7 @@ def scan_content(
     tenant_id: Optional[int] = None,
     campaign_id: Optional[int] = None,
     image_description: Optional[str] = None,
+    images: Optional[list[str]] = None,
     actor_role: str = "user",
 ) -> dict:
     """
@@ -782,8 +873,15 @@ def scan_content(
             chunks=chunks,
         )
 
-    # Hợp nhất: hard violations trước (ưu tiên, không dedup với LLM)
-    all_violations = hard_violations + llm_violations
+    # Layer 3: Vision detect (Gemma 4 31B — chỉ khi có ảnh)
+    vision_violations: list[dict] = []
+    if images:
+        logger.info(f"Vision detect: {len(images)} ảnh")
+        vision_violations = _vision_detect(images, platforms)
+        logger.info(f"Vision detect: {len(vision_violations)} vi phạm từ ảnh")
+
+    # Hợp nhất: hard violations trước, LLM, rồi vision
+    all_violations = hard_violations + llm_violations + vision_violations
 
     # ══ BƯỚC 2 — EXPLAIN / VERDICT ═══════════════════════════════════════════
     verdict = _compute_verdict(all_violations)
@@ -819,4 +917,5 @@ def scan_content(
         "rewrite": rewrite,
         "checklist": checklist,
         "per_platform": per_platform,
+        "images_scanned": len(images) if images else 0,
     }
