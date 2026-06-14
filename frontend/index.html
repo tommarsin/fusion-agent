@@ -137,7 +137,10 @@ let currentDocId = 'HOME';
 // ===== INIT =====
 function init() {
   buildNavTree();
-  mergeTenantDocs();
+  // mergeTenantDocs() gọi apiFetch() — định nghĩa ở script block của AI panel (parse SAU block này).
+  // Gọi trực tiếp ở đây sẽ ReferenceError (bị catch nuốt → tenant-doc im lặng không lên Hub).
+  // → defer tới window 'load' để apiFetch đã tồn tại. (fix bug 7.1 trên live)
+  window.addEventListener('load', mergeTenantDocs);
   loadDoc(window.location.hash ? window.location.hash.substring(1) : 'HOME');
   
   document.getElementById('search-input').addEventListener('input', handleSearch);
