@@ -30,11 +30,12 @@ _MIN_RANK: dict[str, int] = {
     "/submissions": 1,   # Mod+ (item 4.1)
 }
 
-# Paths mà middleware tự ghi audit_log (ingest/approve tự ghi trong handler)
+# Paths mà middleware tự ghi audit_log.
+# CHỈ các route KHÔNG tự ghi trong handler — tránh double-log.
+#   /ask, /invocations, /scan: handler đã tự gọi _write_audit_log (chi tiết hơn: câu hỏi / verdict + số vi phạm).
+#   /ingest, /approve: handler tự ghi.
+#   → middleware chỉ lo /checklist (checklist handler không tự ghi).
 _MIDDLEWARE_AUDIT: dict[str, str] = {
-    "/ask": "ask",
-    "/invocations": "ask",
-    "/scan": "scan",
     "/checklist": "checklist",
 }
 

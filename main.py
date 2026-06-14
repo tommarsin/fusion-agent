@@ -139,7 +139,7 @@ async def _handle_ask(request: Request):
 
     tenant_id = body.get("tenant_id")  # int | None
     platforms = body.get("platforms")  # list[str] | None
-    actor_role = request.headers.get("X-Role", "user").lower()
+    actor_role = request.headers.get("X-Role", "User")
 
     want_stream = bool(body.get("stream")) or (
         request.query_params.get("stream", "").lower() in ("1", "true", "yes")
@@ -238,7 +238,7 @@ async def scan(request: Request):
         images = [img for img in images if isinstance(img, str) and len(img) > 100][:5]
     else:
         images = None
-    actor_role = request.headers.get("X-Role", "user").lower()
+    actor_role = request.headers.get("X-Role", "User")
 
     result = scan_content(
         content=content,
