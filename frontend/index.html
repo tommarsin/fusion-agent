@@ -432,44 +432,70 @@ init();
 ═══════════════════════════════════════════════════════════════════════════ -->
 
 <style>
-/* ── AI Control Bar ─────────────────────────────── */
-#ai-ctrl-bar {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
-  background: #1e293b; color: #f1f5f9;
-  display: flex; align-items: center; gap: 12px; padding: 8px 16px;
-  font-size: 13px; box-shadow: 0 -2px 8px rgba(0,0,0,0.3);
-  flex-wrap: wrap;
+/* ── Floating launcher (FAB) — Item 8.4 ──────────── */
+#ai-ctrl-bar { position: fixed; right: 22px; bottom: 22px; z-index: 200; }
+#ai-ctrl-bar.fab-hidden { display: none; }
+#agent-fab {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: #2563eb; color: #fff; border: none; border-radius: 999px;
+  padding: 9px 18px 9px 9px; cursor: pointer; font-size: 14px; font-weight: 700;
+  box-shadow: 0 6px 20px rgba(37,99,235,0.45); transition: transform .15s, box-shadow .15s;
 }
-#ai-ctrl-bar select {
-  background: #334155; color: #f1f5f9; border: 1px solid #475569;
-  border-radius: 6px; padding: 4px 8px; font-size: 13px; cursor: pointer;
+#agent-fab:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(37,99,235,0.55); }
+#agent-fab .fab-circle {
+  width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,0.18);
+  display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0;
 }
-#ai-ctrl-bar label { color: #94a3b8; font-size: 12px; }
-#btn-open-ai {
-  margin-left: auto; background: #2563eb; color: white;
-  border: none; border-radius: 8px; padding: 6px 16px;
-  font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
-}
-#btn-open-ai:hover { background: #1d4ed8; }
-#role-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; }
+#agent-fab .fab-label { white-space: nowrap; }
+#role-badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; }
 .role-user   { background: #334155; color: #94a3b8; }
 .role-mod    { background: #854d0e; color: #fef9c3; }
 .role-admin  { background: #14532d; color: #bbf7d0; }
 
-/* ── AI Panel Overlay ───────────────────────────── */
+/* ── AI Panel — floating Law AI Agent widget (dock / fullscreen) ─────────── */
 #ai-panel {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 48px; z-index: 190;
-  display: none; flex-direction: column;
-  background: #f8fafc; border-top: 3px solid #2563eb; overflow: hidden;
+  position: fixed; z-index: 199; display: none; flex-direction: column;
+  background: #f8fafc; overflow: hidden;
+  box-shadow: 0 16px 48px rgba(15,23,42,0.32);
 }
 #ai-panel.open { display: flex; }
-#ai-panel-header {
-  background: #1e293b; color: white; padding: 10px 16px;
-  display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+/* dock = small bottom-right (~1/6 of screen) */
+#ai-panel.dock {
+  right: 22px; bottom: 22px;
+  width: clamp(340px, 31vw, 440px);
+  height: clamp(440px, 66vh, 720px);
+  border: 1px solid #e2e8f0; border-radius: 16px;
 }
-#ai-panel-header h2 { font-size: 15px; font-weight: 700; margin: 0; flex: 1; }
-#btn-close-ai { background: #475569; border: none; color: white; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 13px; }
-#btn-close-ai:hover { background: #64748b; }
+/* full = overlay the whole viewport */
+#ai-panel.full {
+  top: 0; left: 0; right: 0; bottom: 0;
+  width: auto; height: auto; border-radius: 0; border-top: 3px solid #2563eb;
+}
+#ai-panel-header {
+  background: #1e293b; color: white; padding: 9px 12px;
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;
+}
+#ai-panel-header .ai-title { font-size: 14px; font-weight: 700; white-space: nowrap; }
+#ai-panel-header .ai-ctx { display: flex; align-items: center; gap: 6px; }
+#ai-panel-header .ai-ctx label { color: #94a3b8; font-size: 11px; }
+#ai-panel-header .ai-ctx select {
+  background: #334155; color: #f1f5f9; border: 1px solid #475569;
+  border-radius: 6px; padding: 3px 6px; font-size: 12px; cursor: pointer; max-width: 160px;
+}
+#ai-panel-header .ai-win-ctrl { display: flex; gap: 4px; margin-left: auto; }
+#ai-panel-header .ai-win-ctrl button {
+  background: #475569; border: none; color: white; border-radius: 6px;
+  width: 28px; height: 28px; cursor: pointer; font-size: 14px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+#ai-panel-header .ai-win-ctrl button:hover { background: #64748b; }
+/* tighter chrome in dock mode */
+#ai-panel.dock #ai-body { padding: 12px 14px; }
+#ai-panel.dock #ai-tabs { padding: 0 4px; }
+#ai-panel.dock .ai-tab { padding: 7px 9px; font-size: 12px; }
+/* dock header: row1 = title + window buttons, row2 = role/tenant */
+#ai-panel.dock #ai-panel-header .ai-ctx { order: 3; flex-basis: 100%; margin-left: 0; }
+#ai-panel.dock #ai-panel-header .ai-ctx label { display: none; }
 
 /* ── Tab nav ─────────────────────────────────────── */
 #ai-tabs { display: flex; background: #1e293b; border-bottom: 2px solid #334155; flex-shrink: 0; overflow-x: auto; padding: 0 8px; }
@@ -632,28 +658,16 @@ init();
 .error-403 .e-title { color: #991b1b; font-weight: 700; margin-bottom: 4px; }
 .error-403 .e-body { color: #7f1d1d; }
 
-/* Body padding for fixed control bar */
-body { padding-bottom: 52px; }
+/* (bottom control bar removed in 8.4 — replaced by floating FAB) */
+body { padding-bottom: 0; }
 </style>
 
-<!-- CONTROL BAR -->
+<!-- FLOATING LAUNCHER (FAB) -->
 <div id="ai-ctrl-bar" class="no-print">
-  <label>Vai trò:</label>
-  <select id="role-select">
-    <option value="User">User</option>
-    <option value="Mod">Mod</option>
-    <option value="Admin">Admin</option>
-  </select>
-  <span id="role-badge" class="role-user">USER</span>
-
-  <label style="margin-left:8px;">Tenant / Game:</label>
-  <select id="tenant-select">
-    <option value="">— Không chọn —</option>
-    <option value="1">nova-studios (id=1)</option>
-    <option value="2">pixel-realm (id=2)</option>
-  </select>
-
-  <button id="btn-open-ai">🤖 AI Agent ▲</button>
+  <button id="agent-fab" type="button" aria-label="Mở Law AI Agent">
+    <span class="fab-circle">⚖️</span>
+    <span class="fab-label">Law AI Agent</span>
+  </button>
 </div>
 
 <!-- TOAST -->
@@ -662,9 +676,25 @@ body { padding-bottom: 52px; }
 <!-- AI PANEL -->
 <div id="ai-panel">
   <div id="ai-panel-header">
-    <h2>🤖 Fusion Compliance AI</h2>
-    <span id="ai-panel-role-display" style="font-size:12px;color:#94a3b8;"></span>
-    <button id="btn-close-ai">✕ Đóng</button>
+    <span class="ai-title">⚖️ Law AI Agent</span>
+    <span class="ai-ctx">
+      <label>Vai trò:</label>
+      <select id="role-select">
+        <option value="User">User</option>
+        <option value="Mod">Mod</option>
+        <option value="Admin">Admin</option>
+      </select>
+      <span id="role-badge" class="role-user">USER</span>
+      <select id="tenant-select" title="Tenant / Game">
+        <option value="">— Tenant —</option>
+        <option value="1">nova-studios (id=1)</option>
+        <option value="2">pixel-realm (id=2)</option>
+      </select>
+    </span>
+    <span class="ai-win-ctrl">
+      <button id="btn-zoom-ai" type="button" title="Toàn màn hình">⤢</button>
+      <button id="btn-close-ai" type="button" title="Thu về biểu tượng">✕</button>
+    </span>
   </div>
 
   <div id="ai-tabs">
@@ -897,11 +927,9 @@ let currentTenantId = null;
   document.getElementById("tenant-select").addEventListener("change", function(e) {
     currentTenantId = e.target.value ? parseInt(e.target.value) : null;
   });
-  document.getElementById("btn-open-ai").addEventListener("click", togglePanel);
-  document.getElementById("btn-close-ai").addEventListener("click", function() {
-    document.getElementById("ai-panel").classList.remove("open");
-    document.getElementById("btn-open-ai").textContent = "🤖 AI Agent ▲";
-  });
+  document.getElementById("agent-fab").addEventListener("click", function() { openAgent("dock"); });
+  document.getElementById("btn-zoom-ai").addEventListener("click", toggleAgentZoom);
+  document.getElementById("btn-close-ai").addEventListener("click", closeAgent);
   document.querySelectorAll(".ai-tab").forEach(function(tab) {
     tab.addEventListener("click", function() { switchTab(tab.dataset.tab); });
   });
@@ -935,15 +963,38 @@ function refreshSectionVisibility() {
   if (aud_l && aud_c) { aud_l.style.display = rank < 2 ? "block" : "none"; aud_c.style.display = rank < 2 ? "none" : "block"; }
 }
 
-function togglePanel() {
+/* ── Floating agent widget: 3 states — closed (FAB) / dock / full ── */
+function openAgent(state) {
   var panel = document.getElementById("ai-panel");
-  var btn = document.getElementById("btn-open-ai");
-  if (panel.classList.toggle("open")) {
-    btn.textContent = "✕ Đóng Panel";
-    refreshSectionVisibility();
+  panel.classList.add("open");
+  panel.classList.remove("dock", "full");
+  panel.classList.add(state === "full" ? "full" : "dock");
+  document.getElementById("ai-ctrl-bar").classList.add("fab-hidden");
+  updateZoomBtn();
+  refreshSectionVisibility();
+}
+function closeAgent() {
+  var panel = document.getElementById("ai-panel");
+  panel.classList.remove("open", "dock", "full");
+  document.getElementById("ai-ctrl-bar").classList.remove("fab-hidden");
+}
+function toggleAgentZoom() {
+  var panel = document.getElementById("ai-panel");
+  if (!panel.classList.contains("open")) return;
+  if (panel.classList.contains("full")) {
+    panel.classList.remove("full"); panel.classList.add("dock");
   } else {
-    btn.textContent = "🤖 AI Agent ▲";
+    panel.classList.remove("dock"); panel.classList.add("full");
   }
+  updateZoomBtn();
+}
+function updateZoomBtn() {
+  var panel = document.getElementById("ai-panel");
+  var btn = document.getElementById("btn-zoom-ai");
+  if (!btn) return;
+  var full = panel.classList.contains("full");
+  btn.textContent = full ? "⤡" : "⤢";
+  btn.title = full ? "Thu về cửa sổ nhỏ" : "Toàn màn hình";
 }
 
 function switchTab(tabId) {
@@ -996,8 +1047,7 @@ function renderMarkdownSimple(text) {
 }
 
 function navigateToDoc(docId) {
-  document.getElementById("ai-panel").classList.remove("open");
-  document.getElementById("btn-open-ai").textContent = "🤖 AI Agent ▲";
+  closeAgent(); // thu agent về biểu tượng để thấy nội dung doc trong Hub
   if (typeof window.loadDoc === "function") {
     window.loadDoc(docId);
     showToast("Đã mở " + docId + " trong Hub", "info");
