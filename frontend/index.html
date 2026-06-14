@@ -619,6 +619,27 @@ init();
 #ai-body { flex: 1; overflow-y: auto; padding: 16px 20px; max-width: 900px; width: 100%; margin: 0 auto; }
 .ai-section { display: none; }
 .ai-section.active { display: block; }
+/* ── 2-column IO (Chat & Scanner) khi phóng to full + lịch sử quét ── */
+#ai-panel.full #ai-body { max-width: 1500px; }
+#ai-panel.full .ai-section.io-split { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 24px; align-items: start; }
+#ai-panel.full .ai-section.io-split .ai-io-output { margin-top: 0; }
+#ai-panel.full .ai-section.io-split .ai-io-full { grid-column: 1 / -1; }
+.scan-history { margin-top: 22px; border-top: 1px solid #e2e8f0; padding-top: 14px; }
+.scan-history h4 { font-size: 13px; font-weight: 700; color: #334155; margin: 0 0 10px; display: flex; align-items: center; justify-content: space-between; }
+.sh-clear { font-size: 11px; color: #94a3b8; cursor: pointer; font-weight: 500; }
+.sh-clear:hover { color: #ef4444; }
+.sh-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 6px; font-size: 12px; }
+.sh-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.sh-badge.safe { background: #dcfce7; color: #166534; }
+.sh-badge.warn { background: #fef3c7; color: #92400e; }
+.sh-badge.block { background: #fee2e2; color: #991b1b; }
+.sh-preview { flex: 1; color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-time { color: #94a3b8; white-space: nowrap; }
+.sh-empty { font-size: 12px; color: #94a3b8; padding: 4px 0; }
+html.dark .scan-history { border-top-color: #334155; }
+html.dark .scan-history h4 { color: #cbd5e1; }
+html.dark .sh-item { border-color: #334155; }
+html.dark .sh-preview { color: #cbd5e1; }
 
 /* ── Form elements ───────────────────────────────── */
 .ai-label { display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -1108,7 +1129,8 @@ html.dark .error-403 .e-body { color: #fca5a5; }
     </div>
 
     <!-- CHAT -->
-    <div class="ai-section active" id="sec-chat">
+    <div class="ai-section active io-split" id="sec-chat">
+      <div class="ai-io-input">
       <p style="font-size:13px;color:#64748b;margin-bottom:12px;">Hỏi chatbot về compliance — trả lời + trích dẫn doc_id (click để mở trong Hub).</p>
       <label class="ai-label">Câu hỏi</label>
       <textarea id="chat-question" class="ai-textarea" style="min-height:80px;" placeholder="Ví dụ: Tổ chức UGC contest thu thông tin người chơi cần lưu ý gì?"></textarea>
@@ -1116,11 +1138,15 @@ html.dark .error-403 .e-body { color: #fca5a5; }
         <button class="ai-btn ai-btn-secondary ai-btn-sm" onclick="fillChatSample()">Thử câu mẫu</button>
         <button id="btn-ask" class="ai-btn ai-btn-primary" onclick="doAsk()">Gửi câu hỏi</button>
       </div>
+      </div><!-- /ai-io-input -->
+      <div class="ai-io-output">
       <div id="chat-result" style="margin-top:16px;"><div class="empty-state"><div class="empty-icon">💬</div><div class="empty-msg">Chưa có câu hỏi nào. Đặt câu hỏi về compliance — agent sẽ trả lời kèm trích dẫn <code>doc_id</code>.</div><button class="ai-btn ai-btn-secondary ai-btn-sm" onclick="fillChatSample()">Thử câu mẫu</button></div></div>
+      </div><!-- /ai-io-output -->
     </div>
 
     <!-- SCANNER -->
-    <div class="ai-section" id="sec-scanner">
+    <div class="ai-section io-split" id="sec-scanner">
+      <div class="ai-io-input">
       <p style="font-size:13px;color:#64748b;margin-bottom:12px;">Dán nội dung → AI phân tích 4 bước: Detect → Explain → Rewrite → Checklist. LLM path mất 15–40s.</p>
       <label class="ai-label">Nội dung cần quét</label>
       <textarea id="scan-content" class="ai-textarea" style="min-height:100px;" placeholder="Dán caption, bài đăng, script quảng cáo..."></textarea>
@@ -1156,8 +1182,15 @@ html.dark .error-403 .e-body { color: #fca5a5; }
         <button class="ai-btn ai-btn-secondary ai-btn-sm" onclick="fillScanSafe()">✅ Mẫu SAFE</button>
         <button id="btn-scan" class="ai-btn ai-btn-primary" onclick="doScan()">🔍 Quét nội dung</button>
       </div>
+      </div><!-- /ai-io-input -->
+      <div class="ai-io-output">
       <div id="scan-spinner" style="display:none;margin-top:12px;color:#64748b;font-size:13px;"><span class="spinner"></span> Đang phân tích (15–40s, LLM đang xử lý)...</div>
       <div id="scan-result" style="margin-top:16px;"></div>
+      </div><!-- /ai-io-output -->
+      <div class="scan-history ai-io-full">
+        <h4>🕘 Lịch sử quét <span class="sh-clear" onclick="_clearScanHistory()">Xoá hết</span></h4>
+        <div id="scan-history-list"></div>
+      </div>
     </div>
 
     <!-- INGEST (Item 7.4 — Guided Authoring) -->
@@ -1440,6 +1473,7 @@ function switchTab(tabId) {
   if (tabId === "approve") loadSubmissions();
   if (tabId === "audit") loadAudit();
   if (tabId === "rules") loadCustomRules();
+  if (tabId === "scanner") _renderScanHistory();
 }
 
 function roleHeaders() {
@@ -1888,6 +1922,36 @@ async function doScan() {
   // stash original text (before "(Quét ảnh...)" fallback) for diff + export
   var originalText = document.getElementById("scan-content").value.trim();
   renderScanResult(d, originalText);
+  _saveScanHistory(d.verdict, originalText, (images && images.length) || 0);
+}
+
+/* ── Lịch sử quét (localStorage, theo trình duyệt) ── */
+var _SCAN_HIST_KEY = "fusion_scan_history_v1";
+function _scanHistList() { try { return JSON.parse(localStorage.getItem(_SCAN_HIST_KEY) || "[]"); } catch(e) { return []; } }
+function _saveScanHistory(verdict, preview, imageCount) {
+  var list = _scanHistList();
+  var text = (preview || "").trim();
+  var label = text ? text.slice(0, 80) : (imageCount ? "(chỉ ảnh)" : "(trống)");
+  list.unshift({ v: verdict || "SAFE", p: label, img: imageCount || 0, t: Date.now() });
+  if (list.length > 20) list = list.slice(0, 20);
+  try { localStorage.setItem(_SCAN_HIST_KEY, JSON.stringify(list)); } catch(e) {}
+  _renderScanHistory();
+}
+function _clearScanHistory() { try { localStorage.removeItem(_SCAN_HIST_KEY); } catch(e) {} _renderScanHistory(); }
+function _renderScanHistory() {
+  var box = document.getElementById("scan-history-list");
+  if (!box) return;
+  var list = _scanHistList();
+  if (!list.length) { box.innerHTML = '<div class="sh-empty">Chưa có lượt quét nào trong phiên này.</div>'; return; }
+  box.innerHTML = list.map(function(it) {
+    var cls = it.v === "BLOCKED" ? "block" : (it.v === "WARNING" ? "warn" : "safe");
+    var vlabel = it.v === "BLOCKED" ? "BLOCKED" : (it.v === "WARNING" ? "CẦN SỬA" : "SAFE");
+    var d = new Date(it.t);
+    var hh = ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+    var dd = ("0"+d.getDate()).slice(-2)+"/"+("0"+(d.getMonth()+1)).slice(-2);
+    var imgtag = it.img ? ' 📷'+it.img : '';
+    return '<div class="sh-item"><span class="sh-badge '+cls+'">'+vlabel+'</span><span class="sh-preview">'+escHtml(it.p)+imgtag+'</span><span class="sh-time">'+dd+' '+hh+'</span></div>';
+  }).join("");
 }
 
 /* ── Item 8.5 — Scanner "thẻ kết quả kiểm duyệt" (hero + 4 report cards + diff + export) ── */
