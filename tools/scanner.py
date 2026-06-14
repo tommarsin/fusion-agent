@@ -348,6 +348,70 @@ def _parse_violations_json(raw: str) -> list[dict]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# CONFIDENCE + EVIDENCE (Item 8.9 — transparency)
+# Chỉ THÊM metadata, KHÔNG đổi verdict logic (verdict đọc `severity`).
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Trích nguồn tĩnh cho các doc gốc hard-rule (fallback khi KB chunk không có doc_id).
+_STATIC_EVIDENCE: dict[str, str] = {
+    "GSX-LEGAL-001": (
+        "NĐ13/2023/NĐ-CP về Bảo vệ dữ liệu cá nhân: CCCD/CMND, số giấy tờ tùy thân là "
+        "dữ liệu cá nhân nhạy cảm — cấm thu thập, yêu cầu hoặc hiển thị khi chưa có cơ sở pháp lý."
+    ),
+    "GSX-OP-002": (
+        "Quy tắc vận hành Game Studio X (GSX-OP-002) — red-line: cờ bạc/cá độ (4E/4F), "
+        "bản đồ hình dạng lãnh thổ VN không rõ Hoàng Sa/Trường Sa (4A), nội dung nhạy cảm "
+        "tôn giáo/dân tộc (4B), ngôn ngữ tục tĩu (4I)."
+    ),
+    "GSX-LEGAL-010": (
+        "Luật Quảng cáo 16/2012/QH13, Khoản 11 Điều 8: cấm dùng từ 'nhất', 'duy nhất', "
+        "'tốt nhất', 'số một' hoặc tương tự khi không có tài liệu hợp pháp chứng minh."
+    ),
+}
+
+
+def _confidence_for(v: dict) -> str:
+    """
+    Heuristic mức độ chắc chắn theo layer phát hiện (cao | vừa | thấp).
+      - source=rule  (hard-rule layer 1): red-line CCCD/bản đồ/cá độ/chửi tục = CAO;
+        các match mềm hơn (số nghi CCCD, từ tuyệt đối) = VỪA.
+      - source=vision (model đa phương thức): diễn giải ảnh → VỪA (nặng) / THẤP (nhẹ).
+      - source=llm    (nuance phụ thuộc ngữ cảnh): VỪA (nặng) / THẤP (nhẹ).
+    """
+    source = v.get("source", "rule")
+    sev = v.get("severity", "major")
+    if source == "rule":
+        return "cao" if sev == "redline" else "vừa"
+    # llm + vision đều là model-based → không bao giờ "cao"
+    return "vừa" if sev in ("redline", "major") else "thấp"
+
+
+def _evidence_for(v: dict, chunks: list[dict]) -> str:
+    """Trích đoạn luật/doc gốc giải thích vì sao vi phạm (ưu tiên KB chunk đúng doc_id)."""
+    doc_id = v.get("rule_doc_id", "")
+    if doc_id:
+        for c in chunks:
+            if c.get("doc_id") == doc_id:
+                body = (c.get("body") or "").strip()
+                if body:
+                    return body[:320] + ("…" if len(body) > 320 else "")
+    fallback = _STATIC_EVIDENCE.get(doc_id)
+    if fallback:
+        return fallback
+    return (v.get("reason", "") or "")[:320]
+
+
+def _enrich_confidence_evidence(violations: list[dict], chunks: list[dict]) -> list[dict]:
+    """Gắn `confidence` + `evidence` cho từng vi phạm (idempotent, không đụng severity/verdict)."""
+    for v in violations:
+        if not v.get("confidence"):
+            v["confidence"] = _confidence_for(v)
+        if not v.get("evidence"):
+            v["evidence"] = _evidence_for(v, chunks)
+    return violations
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # VERDICT
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -826,7 +890,7 @@ def scan_content(
     Returns:
     {
         "verdict": "SAFE|WARNING|BLOCKED",
-        "violations": [{rule_doc_id, quote, reason, severity}],
+        "violations": [{rule_doc_id, quote, reason, severity, source, confidence, evidence}],
         "rewrite": str | None,
         "checklist": [{item, risk, doc_id}],
         "per_platform": {platform: {verdict, notes}},
@@ -880,8 +944,17 @@ def scan_content(
         vision_violations = _vision_detect(images, platforms)
         logger.info(f"Vision detect: {len(vision_violations)} vi phạm từ ảnh")
 
+    # Gắn nhãn nguồn phát hiện (vision đã tự set source="vision")
+    for v in hard_violations:
+        v.setdefault("source", "rule")
+    for v in llm_violations:
+        v.setdefault("source", "llm")
+
     # Hợp nhất: hard violations trước, LLM, rồi vision
     all_violations = hard_violations + llm_violations + vision_violations
+
+    # Item 8.9: thêm confidence + evidence (transparency) — KHÔNG đổi verdict
+    all_violations = _enrich_confidence_evidence(all_violations, chunks)
 
     # ══ BƯỚC 2 — EXPLAIN / VERDICT ═══════════════════════════════════════════
     verdict = _compute_verdict(all_violations)

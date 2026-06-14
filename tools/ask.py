@@ -219,6 +219,13 @@ _BLOCKED_SIGNALS = [
 ]
 
 
+# Từ khoá trong CÂU HỎI để quyết định có chạy BLOCKED enforcer hay không
+_REDLINE_QUESTION_KEYWORDS = [
+    "bản đồ", "ban do", "cccd", "căn cước", "cá độ", "ca do",
+    "nội dung bị cấm", "nội dung vi phạm",
+]
+
+
 def _ensure_blocked_verdict(answer: str) -> str:
     """
     Nếu answer nói về red-line/cấm tuyệt đối nhưng KHÔNG dùng từ 'BLOCKED',
@@ -233,6 +240,124 @@ def _ensure_blocked_verdict(answer: str) -> str:
             prefix = "🔴 **VERDICT: BLOCKED** — Nội dung này bị chặn tuyệt đối, không được đăng.\n\n"
             return prefix + answer
     return answer
+
+
+# ── LLM config helper ─────────────────────────────────────────────────────────
+
+def _llm_config() -> tuple:
+    """Đọc cấu hình LLM từ env. Returns (api_key, base_url, model)."""
+    api_key = os.environ.get("LLM_API_KEY", "").strip()
+    base_url = os.environ.get(
+        "LLM_BASE_URL",
+        "https://maas-llm-aiplatform-hcm.api.vngcloud.vn/v1",
+    ).strip()
+    model = os.environ.get("LLM_MODEL", "").strip()
+    return api_key, base_url, model
+
+
+def _build_user_message(context_text: str, question: str) -> str:
+    return f"""[CONTEXT]
+{context_text}
+
+[CÂU HỎI]
+{question}"""
+
+
+# ── Streaming handler (item 8.8) ──────────────────────────────────────────────
+
+def answer_question_stream(
+    question: str,
+    tenant_id: Optional[int] = None,
+    platforms: Optional[list] = None,
+    actor_role: str = "user",
+):
+    """
+    Generator phiên bản streaming của answer_question.
+    Yield các event dict (main.py serialize sang SSE):
+      {"type": "token", "text": <chunk>}                       # lặp lại theo token
+      {"type": "done", "answer": <full>, "citations": [...],   # cuối cùng
+       "blocked_prefix": <str|None>}
+      {"type": "error", "answer": <msg>}                       # khi lỗi
+
+    Giữ nguyên audit log + citation logic như answer_question.
+    """
+    from rag import retriever  # import tại runtime để tránh circular
+
+    # 1. Retrieve relevant chunks
+    chunks = retriever.retrieve(
+        query=question,
+        tenant_id=tenant_id,
+        platforms=platforms,
+        top_k=12,
+    )
+    logger.info(f"[stream] retrieve: {len(chunks)} chunks cho query '{question[:60]}...'")
+    context_text = _build_context(chunks)
+
+    # 2. Cấu hình LLM
+    api_key, base_url, model = _llm_config()
+    if not api_key or not model:
+        logger.error("LLM_API_KEY hoặc LLM_MODEL chưa set trong .env")
+        yield {
+            "type": "error",
+            "answer": "Hệ thống chưa được cấu hình LLM. Vui lòng kiểm tra LLM_API_KEY và LLM_MODEL trong .env.",
+        }
+        return
+
+    # 3. Gọi LLM stream qua OpenAI-compatible client
+    answer_parts: list = []
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        user_message = _build_user_message(context_text, question)
+
+        stream = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
+            temperature=0.1,
+            max_tokens=2000,
+            stream=True,
+        )
+
+        for chunk in stream:
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+            delta = getattr(choices[0], "delta", None)
+            piece = getattr(delta, "content", None) if delta else None
+            if piece:
+                answer_parts.append(piece)
+                yield {"type": "token", "text": piece}
+
+    except Exception as e:
+        logger.error(f"[stream] LLM call thất bại: {e}")
+        yield {"type": "error", "answer": f"Lỗi khi gọi LLM: {e}"}
+        return
+
+    answer = "".join(answer_parts)
+
+    # 4. Post-process BLOCKED — prefix không stream được inline → gửi ở done event
+    blocked_prefix = None
+    question_lower = question.lower()
+    if any(kw in question_lower for kw in _REDLINE_QUESTION_KEYWORDS):
+        new_answer = _ensure_blocked_verdict(answer)
+        if new_answer != answer:
+            blocked_prefix = new_answer[: len(new_answer) - len(answer)]
+            answer = new_answer
+
+    # 5. Extract citations + 6. audit log (giữ nguyên như non-stream)
+    citations = _extract_citations(chunks, answer)
+    _write_audit_log(actor_role, tenant_id, question)
+
+    yield {
+        "type": "done",
+        "answer": answer,
+        "citations": citations,
+        "blocked_prefix": blocked_prefix,
+    }
 
 
 # ── Main handler ──────────────────────────────────────────────────────────────
@@ -263,12 +388,7 @@ def answer_question(
     context_text = _build_context(chunks)
 
     # 2. Cấu hình LLM
-    api_key = os.environ.get("LLM_API_KEY", "").strip()
-    base_url = os.environ.get(
-        "LLM_BASE_URL",
-        "https://maas-llm-aiplatform-hcm.api.vngcloud.vn/v1",
-    ).strip()
-    model = os.environ.get("LLM_MODEL", "").strip()
+    api_key, base_url, model = _llm_config()
 
     if not api_key or not model:
         logger.error("LLM_API_KEY hoặc LLM_MODEL chưa set trong .env")
@@ -283,11 +403,7 @@ def answer_question(
 
         client = OpenAI(api_key=api_key, base_url=base_url)
 
-        user_message = f"""[CONTEXT]
-{context_text}
-
-[CÂU HỎI]
-{question}"""
+        user_message = _build_user_message(context_text, question)
 
         response = client.chat.completions.create(
             model=model,
@@ -310,12 +426,8 @@ def answer_question(
 
     # 4. Post-process: đảm bảo red-line topics có từ BLOCKED rõ ràng
     # Chỉ trigger nếu câu hỏi chứa từ khoá liên quan đến nội dung có thể bị chặn
-    _redline_question_keywords = [
-        "bản đồ", "ban do", "cccd", "căn cước", "cá độ", "ca do",
-        "nội dung bị cấm", "nội dung vi phạm",
-    ]
     question_lower = question.lower()
-    if any(kw in question_lower for kw in _redline_question_keywords):
+    if any(kw in question_lower for kw in _REDLINE_QUESTION_KEYWORDS):
         answer = _ensure_blocked_verdict(answer)
 
     # 5. Extract citations từ câu trả lời (có transitive lookup)

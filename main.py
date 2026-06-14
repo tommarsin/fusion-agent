@@ -8,6 +8,7 @@ Routes implemented here are stubs (HTTP 501). Logic filled in per WS3 items:
   4.1 → /ui (static demo UI) + /submissions (list pending)
 """
 
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -16,7 +17,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 import uvicorn
 
 load_dotenv()
@@ -120,10 +121,13 @@ async def list_submissions_route(request: Request):
 
 # ── /ask + /invocations (item 3.1) ───────────────────────────────────────────
 
-async def _handle_ask(request: Request) -> JSONResponse:
-    """Shared handler cho /ask và /invocations alias."""
-    from tools.ask import answer_question
+async def _handle_ask(request: Request):
+    """
+    Shared handler cho /ask và /invocations alias.
 
+    Mặc định trả JSON (non-stream) — giữ tương thích cho client cũ (vd Notion 5.1).
+    Nếu body có "stream": true (hoặc query ?stream=1) → trả SSE token streaming (item 8.8).
+    """
     try:
         body = await request.json()
     except Exception:
@@ -136,6 +140,41 @@ async def _handle_ask(request: Request) -> JSONResponse:
     tenant_id = body.get("tenant_id")  # int | None
     platforms = body.get("platforms")  # list[str] | None
     actor_role = request.headers.get("X-Role", "user").lower()
+
+    want_stream = bool(body.get("stream")) or (
+        request.query_params.get("stream", "").lower() in ("1", "true", "yes")
+    )
+
+    if want_stream:
+        from tools.ask import answer_question_stream
+
+        def event_gen():
+            try:
+                for ev in answer_question_stream(
+                    question=question,
+                    tenant_id=tenant_id,
+                    platforms=platforms,
+                    actor_role=actor_role,
+                ):
+                    yield "data: " + json.dumps(ev, ensure_ascii=False) + "\n\n"
+            except Exception as e:  # phòng hờ — generator không nên raise
+                logger.error(f"/ask stream error: {e}")
+                yield "data: " + json.dumps(
+                    {"type": "error", "answer": f"Lỗi stream: {e}"}, ensure_ascii=False
+                ) + "\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(
+            event_gen(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",  # tắt buffering của reverse proxy (nginx)
+                "Connection": "keep-alive",
+            },
+        )
+
+    from tools.ask import answer_question
 
     result = answer_question(
         question=question,
