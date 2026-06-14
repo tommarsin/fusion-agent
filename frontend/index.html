@@ -583,6 +583,33 @@ init();
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #cbd5e1; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Scanner 4-step stepper (Item 8.2) ──────────────── */
+.scan-stepper { margin-top: 14px; padding: 14px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; }
+.scan-stepper-title { font-size: 12px; color: #64748b; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+.scan-step { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; color: #94a3b8; transition: color 0.3s; }
+.scan-step .step-icon { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; background: #fff; transition: all 0.3s; }
+.scan-step.active { color: #1e40af; font-weight: 600; }
+.scan-step.active .step-icon { border-color: #3b82f6; background: #3b82f6; color: #fff; }
+.scan-step.active .step-icon .spinner { width: 12px; height: 12px; margin: 0; border-color: rgba(255,255,255,.5); border-top-color: #fff; }
+.scan-step.done { color: #16a34a; }
+.scan-step.done .step-icon { border-color: #16a34a; background: #16a34a; color: #fff; }
+
+/* ── Chat typing indicator (Item 8.2) ───────────────── */
+.typing-skeleton { padding: 14px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; }
+.typing-dots { display: inline-flex; gap: 4px; align-items: center; }
+.typing-dots span { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; animation: typing-bounce 1.2s infinite ease-in-out; }
+.typing-dots span:nth-child(2) { animation-delay: .2s; }
+.typing-dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes typing-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .4; } 30% { transform: translateY(-5px); opacity: 1; } }
+.skeleton-line { height: 11px; border-radius: 6px; background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%); background-size: 200% 100%; animation: skeleton-shimmer 1.3s infinite; margin-top: 10px; }
+@keyframes skeleton-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ── Empty states (Item 8.3) ────────────────────────── */
+.empty-state { text-align: center; padding: 36px 20px; color: #94a3b8; }
+.empty-state .empty-icon { font-size: 40px; line-height: 1; margin-bottom: 12px; opacity: .85; }
+.empty-state .empty-msg { font-size: 13px; color: #64748b; margin-bottom: 14px; max-width: 360px; margin-left: auto; margin-right: auto; line-height: 1.55; }
+.empty-state .ai-btn { margin: 0 auto; }
+
 /* ── Rewrite block ───────────────────────────────── */
 .rewrite-block { background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 12px; font-size: 14px; white-space: pre-wrap; line-height: 1.6; color: #14532d; }
 
@@ -632,7 +659,7 @@ body { padding-bottom: 52px; }
 <!-- AI PANEL -->
 <div id="ai-panel">
   <div id="ai-panel-header">
-    <h2>🤖 Fusion Compliance AI — Demo Panel</h2>
+    <h2>🤖 Fusion Compliance AI</h2>
     <span id="ai-panel-role-display" style="font-size:12px;color:#94a3b8;"></span>
     <button id="btn-close-ai">✕ Đóng</button>
   </div>
@@ -678,10 +705,10 @@ body { padding-bottom: 52px; }
       <label class="ai-label">Câu hỏi</label>
       <textarea id="chat-question" class="ai-textarea" style="min-height:80px;" placeholder="Ví dụ: Tổ chức UGC contest thu thông tin người chơi cần lưu ý gì?"></textarea>
       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="ai-btn ai-btn-secondary ai-btn-sm" onclick="fillChatSample()">Điền mẫu Beat 2</button>
+        <button class="ai-btn ai-btn-secondary ai-btn-sm" onclick="fillChatSample()">Thử câu mẫu</button>
         <button id="btn-ask" class="ai-btn ai-btn-primary" onclick="doAsk()">Gửi câu hỏi</button>
       </div>
-      <div id="chat-result" style="margin-top:16px;"></div>
+      <div id="chat-result" style="margin-top:16px;"><div class="empty-state"><div class="empty-icon">💬</div><div class="empty-msg">Chưa có câu hỏi nào. Đặt câu hỏi về compliance — agent sẽ trả lời kèm trích dẫn <code>doc_id</code>.</div><button class="ai-btn ai-btn-secondary ai-btn-sm" onclick="fillChatSample()">Thử câu mẫu</button></div></div>
     </div>
 
     <!-- SCANNER -->
@@ -717,7 +744,7 @@ body { padding-bottom: 52px; }
         <div id="scan-img-previews" class="img-preview-grid"></div>
       </div>
       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="ai-btn ai-btn-secondary ai-btn-sm" onclick="fillScanSample()">⚡ Mẫu BLOCKED (Beat 3)</button>
+        <button class="ai-btn ai-btn-secondary ai-btn-sm" onclick="fillScanSample()">⚡ Thử nội dung vi phạm</button>
         <button class="ai-btn ai-btn-secondary ai-btn-sm" onclick="fillScanSafe()">✅ Mẫu SAFE</button>
         <button id="btn-scan" class="ai-btn ai-btn-primary" onclick="doScan()">🔍 Quét nội dung</button>
       </div>
@@ -727,7 +754,7 @@ body { padding-bottom: 52px; }
 
     <!-- INGEST (Item 7.4 — Guided Authoring) -->
     <div class="ai-section" id="sec-ingest">
-      <p style="font-size:13px;color:#64748b;margin-bottom:12px;"><strong>Mod</strong>: scope tenant live ngay / scope core → pending Admin duyệt. <strong>Admin</strong>: live ngay. <strong>User</strong>: nhận 403 từ server (Beat 6).</p>
+      <p style="font-size:13px;color:#64748b;margin-bottom:12px;"><strong>Mod</strong>: scope tenant live ngay / scope core → pending Admin duyệt. <strong>Admin</strong>: live ngay. <strong>User</strong>: nhận 403 từ server.</p>
 
       <!-- Step 1: Category picker -->
       <div style="margin-bottom:14px;">
@@ -988,7 +1015,7 @@ async function doAsk() {
   if (!question) { showToast("Vui lòng nhập câu hỏi", "err"); return; }
   var btn = document.getElementById("btn-ask");
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Đang hỏi...';
-  document.getElementById("chat-result").innerHTML = "";
+  document.getElementById("chat-result").innerHTML = '<div class="typing-skeleton"><div style="display:flex;align-items:center;gap:8px;color:#64748b;font-size:13px;">🤖 Agent đang soạn câu trả lời <span class="typing-dots"><span></span><span></span><span></span></span></div><div class="skeleton-line" style="width:92%;"></div><div class="skeleton-line" style="width:78%;"></div><div class="skeleton-line" style="width:85%;"></div></div>';
   var result = await apiFetch("/ask", {method:"POST", body:JSON.stringify({question:question, tenant_id:currentTenantId})});
   btn.disabled = false; btn.textContent = "Gửi câu hỏi";
   if (result.status !== 200) { document.getElementById("chat-result").innerHTML = renderErrorBox(result.status, result.data); return; }
@@ -1109,11 +1136,40 @@ async function doScan() {
   var spinner = document.getElementById("scan-spinner");
   btn.disabled = true; btn.textContent = "Đang quét...";
   var images = _scanImages.length > 0 ? _scanImages.map(function(img) { return img.b64; }) : undefined;
-  var spinnerMsg = hasImages ? "Đang phân tích (text + " + _scanImages.length + " ảnh, vision AI ~20-60s)..." : "Đang phân tích (15–40s, LLM đang xử lý)...";
-  spinner.innerHTML = '<span class="spinner"></span> ' + spinnerMsg;
+  // 4-step stepper (simulated progress — backend returns once; last step holds until real response)
+  var hint = hasImages ? "(text + " + _scanImages.length + " ảnh, vision AI ~20-60s)" : "(LLM đang xử lý ~15–40s)";
+  var stepLabels = ["Phát hiện vi phạm", "Giải thích", "Gợi ý sửa", "Lập checklist"];
+  spinner.innerHTML = '<div class="scan-stepper"><div class="scan-stepper-title">🔍 Đang phân tích ' + hint + '</div>'
+    + stepLabels.map(function(lbl, i) {
+        return '<div class="scan-step" id="scan-step-' + i + '"><span class="step-icon">' + (i+1) + '</span><span>' + (i+1) + ') ' + lbl + '</span></div>';
+      }).join("") + '</div>';
   spinner.style.display = "block";
   document.getElementById("scan-result").innerHTML = "";
+  // advance steps over time; last step (index 3) stays active until response lands
+  var _scanStep = 0;
+  function _activateScanStep(i) {
+    var el = document.getElementById("scan-step-" + i);
+    if (!el) return;
+    el.classList.add("active");
+    el.querySelector(".step-icon").innerHTML = '<span class="spinner"></span>';
+  }
+  function _completeScanStep(i) {
+    var el = document.getElementById("scan-step-" + i);
+    if (!el) return;
+    el.classList.remove("active"); el.classList.add("done");
+    el.querySelector(".step-icon").innerHTML = "✓";
+  }
+  _activateScanStep(0);
+  var _scanTimer = setInterval(function() {
+    if (_scanStep >= 2) return; // don't auto-advance past step 3 (index 2→3); index 3 held by response
+    _completeScanStep(_scanStep);
+    _scanStep++;
+    _activateScanStep(_scanStep);
+  }, 4000);
   var result = await apiFetch("/scan", {method:"POST", body:JSON.stringify({content:content, platforms:platforms, tenant_id:currentTenantId, image_description:imageDescription, images:images})});
+  clearInterval(_scanTimer);
+  // flush remaining steps as done
+  for (var _si = 0; _si <= _scanStep; _si++) _completeScanStep(_si);
   btn.disabled = false; btn.textContent = "🔍 Quét nội dung";
   spinner.style.display = "none";
   if (result.status !== 200) { document.getElementById("scan-result").innerHTML = renderErrorBox(result.status, result.data); return; }
@@ -1300,7 +1356,7 @@ async function loadSubmissions() {
   var result = await apiFetch("/submissions?status=" + encodeURIComponent(statusFilter));
   if (result.status !== 200) { wrap.innerHTML = renderErrorBox(result.status, result.data); return; }
   var subs = result.data.submissions || [];
-  if (subs.length === 0) { wrap.innerHTML = '<div style="color:#94a3b8;font-size:13px;text-align:center;padding:20px;">Không có submission nào' + (statusFilter !== "all" ? ' ở trạng thái ' + statusFilter : '') + '.</div>'; return; }
+  if (subs.length === 0) { wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-msg">Chưa có đề xuất nào' + (statusFilter !== "all" ? ' ở trạng thái <strong>' + escHtml(statusFilter) + '</strong>' : '') + ' chờ duyệt. Tài liệu scope=core do Mod nạp sẽ xuất hiện ở đây.</div><button class="ai-btn ai-btn-secondary ai-btn-sm" onclick="loadSubmissions()">↻ Tải lại</button></div>'; return; }
   var scopeLabels = {core:"🔵 Core", tenant:"🟢 Tenant", campaign:"🟡 Campaign"};
   var html = "";
   subs.forEach(function(s) {
@@ -1349,7 +1405,7 @@ async function loadCustomRules() {
   var result = await apiFetch("/rules" + qs);
   if (result.status !== 200) { wrap.innerHTML = renderErrorBox(result.status, result.data); return; }
   var rules = result.data.rules || [];
-  if (rules.length === 0) { wrap.innerHTML = '<div style="color:#94a3b8;font-size:13px;text-align:center;padding:20px;">Chưa có custom rule nào' + (layer ? ' ở layer này' : '') + '. Nạp qua tab <strong>📥 Nạp luật</strong>.</div>'; return; }
+  if (rules.length === 0) { wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">📚</div><div class="empty-msg">Chưa có custom rule nào' + (layer ? ' ở layer này' : '') + '. Thêm luật/quy tắc mới qua tab <strong>📥 Nạp luật</strong> để chúng hiện ở đây.</div><button class="ai-btn ai-btn-secondary ai-btn-sm" onclick="switchTab(\'ingest\')">📥 Nạp luật</button></div>'; return; }
   var layerLabels = {operating_rule:"🔧 Operating Rule", daily_tool:"🛠 Daily Tool", case_study:"📖 Case Study", platform_policy:"🌐 Platform Policy", legal_source:"⚖️ Legal Source"};
   var scopeLabels = {core:"Core", tenant:"Tenant", campaign:"Campaign"};
   var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
@@ -1381,7 +1437,7 @@ async function loadAudit() {
   var result = await apiFetch("/audit");
   if (result.status !== 200) { wrap.innerHTML = renderErrorBox(result.status, result.data); return; }
   var entries = result.data.entries || [];
-  if (entries.length === 0) { wrap.innerHTML = '<div style="color:#94a3b8;font-size:13px;text-align:center;padding:20px;">Chưa có bản ghi audit.</div>'; return; }
+  if (entries.length === 0) { wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-msg">Chưa có bản ghi audit. Mọi thao tác hỏi, quét, nạp, duyệt sẽ được ghi lại ở đây.</div><button class="ai-btn ai-btn-secondary ai-btn-sm" onclick="loadAudit()">🔄 Tải lại</button></div>'; return; }
   var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f1f5f9;">';
   html += '<th style="padding:8px;text-align:left;border-bottom:2px solid #e2e8f0;">Thời gian</th>';
   html += '<th style="padding:8px;text-align:left;border-bottom:2px solid #e2e8f0;">Role</th>';
