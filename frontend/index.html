@@ -609,7 +609,7 @@ init();
 #agent-fab .fab-ctx.show { display: inline-flex; }
 
 /* ── Tab nav ─────────────────────────────────────── */
-#ai-tabs { display: flex; background: #1e293b; border-bottom: 2px solid #334155; flex-shrink: 0; overflow-x: auto; padding: 0 8px; }
+#ai-tabs { display: flex; flex-wrap: wrap; background: #1e293b; border-bottom: 2px solid #334155; flex-shrink: 0; overflow: visible; padding: 0 8px; }
 .ai-tab { padding: 8px 18px; font-size: 13px; font-weight: 500; color: #94a3b8; border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap; margin-bottom: -2px; border-radius: 4px 4px 0 0; transition: color 0.15s; }
 .ai-tab:hover { color: #e2e8f0; }
 .ai-tab.active { color: #60a5fa; border-bottom-color: #3b82f6; background: #0f172a; }
@@ -672,8 +672,8 @@ init();
 /* ── Tab help icon ──────────────────────────────── */
 .tab-help { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: #475569; color: #e2e8f0; font-size: 10px; font-weight: 700; margin-left: 4px; cursor: help; position: relative; vertical-align: middle; line-height: 1; }
 .tab-help:hover { background: #3b82f6; }
-.tab-help-tooltip { display: none; position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #1e293b; color: #e2e8f0; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 400; white-space: normal; width: 240px; text-align: left; z-index: 200; box-shadow: 0 4px 12px rgba(0,0,0,0.3); line-height: 1.5; text-transform: none; letter-spacing: normal; }
-.tab-help-tooltip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: #1e293b; }
+.tab-help-tooltip { display: none; position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: #1e293b; color: #e2e8f0; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 400; white-space: normal; width: 240px; text-align: left; z-index: 300; box-shadow: 0 4px 12px rgba(0,0,0,0.3); line-height: 1.5; text-transform: none; letter-spacing: normal; }
+.tab-help-tooltip::after { content: ''; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-bottom-color: #1e293b; }
 .tab-help:hover .tab-help-tooltip { display: block; }
 
 /* ── Field tooltip ──────────────────────────────── */
@@ -1084,7 +1084,7 @@ html.dark .error-403 .e-body { color: #fca5a5; }
   <div id="ai-body">
 
     <!-- ONBOARDING GUIDE -->
-    <div class="onboarding-guide" id="onboarding-guide">
+    <div class="onboarding-guide collapsed" id="onboarding-guide">
       <div class="onboarding-toggle" onclick="document.getElementById('onboarding-guide').classList.toggle('collapsed')">
         <h3>📘 Hướng dẫn sử dụng</h3>
         <span class="chevron">▼</span>
