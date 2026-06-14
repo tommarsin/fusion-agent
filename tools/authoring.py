@@ -177,6 +177,11 @@ def classify_and_extract(raw_text: str, source_url: Optional[str] = None) -> dic
     result.setdefault("key_prohibitions", [])
     result.setdefault("related_doc_ids", [])
 
+    # title có thể bị LLM trả về null/"" (setdefault KHÔNG thay None) → ép non-empty
+    # tránh vi phạm NOT NULL ở cột rules.title + tránh "# None" trong body_md.
+    if not str(result.get("title") or "").strip():
+        result["title"] = "Tài liệu chưa đặt tiêu đề"
+
     # Validate enum values
     if result["content_layer"] not in VALID_LAYERS:
         result["content_layer"] = "operating_rule"
@@ -203,7 +208,7 @@ def build_body_md(extracted: dict) -> str:
     KHÔNG copy nguyên văn — tóm tắt diễn giải (repo public).
     """
     layer = extracted.get("content_layer", "operating_rule")
-    title = extracted.get("title", "")
+    title = extracted.get("title") or "Tài liệu chưa đặt tiêu đề"
     summary = extracted.get("summary", "")
     obligations = extracted.get("key_obligations", [])
     prohibitions = extracted.get("key_prohibitions", [])
@@ -370,7 +375,7 @@ def run_authoring_pipeline(
         "errors": errors,
         "doc_id": doc_id,
         "content_layer": layer,
-        "title": extracted.get("title", ""),
+        "title": extracted.get("title") or "Tài liệu chưa đặt tiêu đề",
         "body_md": body_md,
         "platforms": extracted.get("platforms", ["all"]),
         "tags": extracted.get("tags", []),

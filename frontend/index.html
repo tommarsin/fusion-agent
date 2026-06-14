@@ -2291,13 +2291,18 @@ async function doIngest() {
   if (result.status !== 200) { document.getElementById("ingest-result").innerHTML = renderErrorBox(result.status, result.data); return; }
   var d = result.data;
   var html = '<div class="ai-card" style="border-color:#86efac;"><div class="ai-card-title" style="color:#16a34a;">✅ Nạp thành công</div>';
-  if (d.doc_id) html += '<p>Doc ID: <span class="doc-id-link">' + escHtml(d.doc_id) + '</span></p>';
+  if (d.doc_id) html += '<p>Doc ID: <span class="doc-id-link" style="cursor:pointer;" onclick="navigateToDoc(\'' + escHtml(d.doc_id) + '\')">' + escHtml(d.doc_id) + '</span> <span style="font-size:12px;color:#64748b;">(click để mở trong Hub)</span></p>';
   if (d.submission_id) html += '<p>Submission ID: <strong>#' + d.submission_id + '</strong> — đang chờ Admin duyệt.</p><p style="font-size:13px;color:#64748b;">→ Chuyển sang tab <strong>Duyệt</strong> (cần đổi role Mod/Admin) để approve.</p>';
   if (d.status) html += '<p>Trạng thái: <strong>' + escHtml(d.status) + '</strong></p>';
   if (d.message) html += '<p style="font-size:13px;color:#475569;">' + escHtml(d.message) + '</p>';
   html += '</div>';
   document.getElementById("ingest-result").innerHTML = html;
   showToast("Nạp tài liệu thành công!", "ok");
+  // Doc tenant approved (live ngay) → refresh sidebar Hub + TENANT_DOCS để doc mới
+  // hiện ngay trong cây Layer + click Doc ID mở được (mergeTenantDocs chỉ chạy lúc load).
+  if (d.doc_id && d.status === "approved") {
+    try { await mergeTenantDocs(); } catch (e) { console.warn("refresh tenant docs:", e); }
+  }
   if (d.submission_id) {
     var rank = {"User":0,"Mod":1,"Admin":2}[currentRole] || 0;
     if (rank >= 1) loadSubmissions();
