@@ -1369,7 +1369,7 @@ async function doIngest() {
   if (!source) { showToast("Vui lòng nhập URL hoặc nội dung văn bản", "err"); return; }
   var scope = document.getElementById("ingest-scope").value;
   if ((scope === "tenant" || scope === "campaign") && !currentTenantId) {
-    showToast("Vui lòng chọn Tenant/Game ở thanh điều khiển bên dưới trước khi nạp scope " + scope, "err");
+    showToast("Vui lòng chọn Tenant/Game ở header cửa sổ Law AI Agent trước khi nạp scope " + scope, "err");
     document.getElementById("tenant-select").style.outline = "2px solid #ef4444";
     setTimeout(function() { document.getElementById("tenant-select").style.outline = ""; }, 3000);
     return;
@@ -1520,7 +1520,7 @@ function renderErrorBox(status, data) {
   if (status === 403) {
     var role = (data && data.your_role) || currentRole;
     var msg = (data && data.error) || "Không có quyền thực hiện thao tác này";
-    return '<div class="error-403"><div class="e-title">🚫 403 — Từ chối quyền truy cập</div><div class="e-body"><strong>Lỗi:</strong> ' + escHtml(msg) + '<br><strong>Vai trò hiện tại:</strong> ' + escHtml(role) + '<br><br>Để thực hiện thao tác này, hãy đổi role sang <strong>Mod</strong> hoặc <strong>Admin</strong> ở thanh điều khiển bên dưới.</div></div>';
+    return '<div class="error-403"><div class="e-title">🚫 403 — Từ chối quyền truy cập</div><div class="e-body"><strong>Lỗi:</strong> ' + escHtml(msg) + '<br><strong>Vai trò hiện tại:</strong> ' + escHtml(role) + '<br><br>Để thực hiện thao tác này, hãy đổi role sang <strong>Mod</strong> hoặc <strong>Admin</strong> ở header cửa sổ Law AI Agent.</div></div>';
   }
   var errMsg = (data && (data.error || data.detail)) || JSON.stringify(data || {}).substring(0, 200);
   return '<div class="ai-card" style="border-color:#fca5a5;background:#fef2f2;"><div class="ai-card-title" style="color:#dc2626;">Lỗi ' + status + '</div><p style="font-size:13px;color:#7f1d1d;">' + escHtml(errMsg) + '</p></div>';
