@@ -170,8 +170,11 @@ def handle_ingest(
             created_by_role=role,
         )
     except Exception as e:
-        logger.error(f"insert_rule thất bại: {e}")
-        return 500, {"error": f"Lỗi DB khi insert rule: {e}"}
+        err_str = str(e)
+        logger.error(f"insert_rule thất bại: {err_str}")
+        if "related_core_doc_id" in err_str and "foreign key" in err_str.lower():
+            return 422, {"error": f"Doc ID '{related_core_doc_id}' chưa tồn tại trong hệ thống. Hãy nạp tài liệu gốc (scope 'Luật chung hệ thống') trước, hoặc bỏ trống field Related Core Doc ID."}
+        return 500, {"error": f"Lỗi DB khi insert rule: {err_str}"}
 
     # Ghi rule_version
     try:

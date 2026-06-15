@@ -250,15 +250,14 @@ function buildNavTree() {
     `;
     header.onclick = () => {
       section.classList.toggle('collapsed');
-      // Save collapsed state
-      const collapsedLayers = JSON.parse(localStorage.getItem('gs3_collapsed_layers') || '[]');
-      if (section.classList.contains('collapsed')) {
-        if (!collapsedLayers.includes(layerKey)) collapsedLayers.push(layerKey);
+      const expandedLayers = JSON.parse(localStorage.getItem('gs3_expanded_layers') || '[]');
+      if (!section.classList.contains('collapsed')) {
+        if (!expandedLayers.includes(layerKey)) expandedLayers.push(layerKey);
       } else {
-        const idx = collapsedLayers.indexOf(layerKey);
-        if (idx > -1) collapsedLayers.splice(idx, 1);
+        const idx = expandedLayers.indexOf(layerKey);
+        if (idx > -1) expandedLayers.splice(idx, 1);
       }
-      localStorage.setItem('gs3_collapsed_layers', JSON.stringify(collapsedLayers));
+      localStorage.setItem('gs3_expanded_layers', JSON.stringify(expandedLayers));
     };
     section.appendChild(header);
     
@@ -276,9 +275,9 @@ function buildNavTree() {
     
     section.appendChild(itemsContainer);
     
-    // Restore collapsed state from localStorage
-    const collapsedLayers = JSON.parse(localStorage.getItem('gs3_collapsed_layers') || '[]');
-    if (collapsedLayers.includes(layerKey)) {
+    // Default collapsed; only expand if explicitly saved
+    const expandedLayers = JSON.parse(localStorage.getItem('gs3_expanded_layers') || '[]');
+    if (!expandedLayers.includes(layerKey)) {
       section.classList.add('collapsed');
     }
     
@@ -296,16 +295,16 @@ function buildNavTree() {
   tree.insertBefore(controls, tree.children[1]); // After Home button
   
   document.getElementById('expand-all-btn').onclick = () => {
-    document.querySelectorAll('.layer-section').forEach(s => s.classList.remove('collapsed'));
-    localStorage.setItem('gs3_collapsed_layers', '[]');
-  };
-  document.getElementById('collapse-all-btn').onclick = () => {
     const allKeys = [];
     document.querySelectorAll('.layer-section').forEach(s => {
-      s.classList.add('collapsed');
+      s.classList.remove('collapsed');
       allKeys.push(s.dataset.layerKey);
     });
-    localStorage.setItem('gs3_collapsed_layers', JSON.stringify(allKeys));
+    localStorage.setItem('gs3_expanded_layers', JSON.stringify(allKeys));
+  };
+  document.getElementById('collapse-all-btn').onclick = () => {
+    document.querySelectorAll('.layer-section').forEach(s => s.classList.add('collapsed'));
+    localStorage.setItem('gs3_expanded_layers', '[]');
   };
 }
 
@@ -372,11 +371,10 @@ function loadDoc(docId) {
     const section = document.querySelector(`.layer-section[data-layer-key="${doc.layer}"]`);
     if (section && section.classList.contains('collapsed')) {
       section.classList.remove('collapsed');
-      const collapsedLayers = JSON.parse(localStorage.getItem('gs3_collapsed_layers') || '[]');
-      const idx = collapsedLayers.indexOf(doc.layer);
-      if (idx > -1) {
-        collapsedLayers.splice(idx, 1);
-        localStorage.setItem('gs3_collapsed_layers', JSON.stringify(collapsedLayers));
+      const expandedLayers = JSON.parse(localStorage.getItem('gs3_expanded_layers') || '[]');
+      if (!expandedLayers.includes(doc.layer)) {
+        expandedLayers.push(doc.layer);
+        localStorage.setItem('gs3_expanded_layers', JSON.stringify(expandedLayers));
       }
     }
   }
@@ -622,7 +620,8 @@ init();
 /* ── 2-column IO (Chat & Scanner) khi phóng to full + lịch sử quét ── */
 #ai-panel.full #ai-body { max-width: 1500px; }
 #ai-panel.full .ai-section.io-split { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 24px; align-items: start; }
-#ai-panel.full .ai-section.io-split .ai-io-output { margin-top: 0; }
+#ai-panel.full .ai-section.io-split .ai-io-input { position: sticky; top: 0; align-self: start; }
+#ai-panel.full .ai-section.io-split .ai-io-output { margin-top: 0; max-height: 80vh; overflow-y: auto; }
 #ai-panel.full .ai-section.io-split .ai-io-full { grid-column: 1 / -1; }
 .scan-history { margin-top: 22px; border-top: 1px solid #e2e8f0; padding-top: 14px; }
 .scan-history h4 { font-size: 13px; font-weight: 700; color: #334155; margin: 0 0 10px; display: flex; align-items: center; justify-content: space-between; }
@@ -1195,7 +1194,7 @@ html.dark .error-403 .e-body { color: #fca5a5; }
 
     <!-- INGEST (Item 7.4 — Guided Authoring) -->
     <div class="ai-section" id="sec-ingest">
-      <p style="font-size:13px;color:#64748b;margin-bottom:12px;"><strong>Mod</strong>: scope tenant live ngay / scope core → pending Admin duyệt. <strong>Admin</strong>: live ngay. <strong>User</strong>: nhận 403 từ server.</p>
+      <p style="font-size:13px;color:#64748b;margin-bottom:12px;"><strong>Mod</strong>: luật riêng studio → live ngay / luật chung → cần Admin duyệt. <strong>Admin</strong>: live ngay. <strong>User</strong>: không có quyền nạp.</p>
 
       <!-- Step 1: Category picker -->
       <div style="margin-bottom:14px;">
@@ -1242,9 +1241,9 @@ html.dark .error-403 .e-body { color: #fca5a5; }
         <div>
           <label class="ai-label">Scope<span class="field-hint">?<span class="field-hint-tooltip"><strong>core</strong> = luật dùng chung toàn hệ thống (Mod nạp → cần Admin duyệt). <strong>tenant</strong> = luật riêng studio/game (Mod nạp live ngay). <strong>campaign</strong> = áp dụng cho 1 campaign cụ thể.</span></span></label>
           <select id="ingest-scope" class="ai-select">
-            <option value="core">core (Mod → pending, Admin → live)</option>
-            <option value="tenant">tenant (Mod → live ngay)</option>
-            <option value="campaign">campaign</option>
+            <option value="tenant">Luật riêng studio/game — áp dụng ngay</option>
+            <option value="core">Luật chung hệ thống — cần Admin duyệt</option>
+            <option value="campaign">Luật riêng campaign — áp dụng ngay</option>
           </select>
         </div>
         <div>
@@ -2372,18 +2371,24 @@ async function loadCustomRules() {
   if (rules.length === 0) { wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">📚</div><div class="empty-msg">Chưa có custom rule nào' + (layer ? ' ở layer này' : '') + '. Thêm luật/quy tắc mới qua tab <strong>📥 Nạp luật</strong> để chúng hiện ở đây.</div><button class="ai-btn ai-btn-secondary ai-btn-sm" onclick="switchTab(\'ingest\')">📥 Nạp luật</button></div>'; return; }
   var layerLabels = {operating_rule:"🔧 Operating Rule", daily_tool:"🛠 Daily Tool", case_study:"📖 Case Study", platform_policy:"🌐 Platform Policy", legal_source:"⚖️ Legal Source"};
   var scopeLabels = {core:"Core", tenant:"Tenant", campaign:"Campaign"};
-  var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-  html += '<tr style="background:#f1f5f9;"><th style="padding:8px;text-align:left;">Doc ID</th><th style="padding:8px;text-align:left;">Layer</th><th style="padding:8px;text-align:left;">Tiêu đề</th><th style="padding:8px;text-align:left;">Scope</th><th style="padding:8px;text-align:left;">Platforms</th><th style="padding:8px;text-align:left;">Ngày tạo</th></tr>';
+  var isDark = document.documentElement.classList.contains('dark');
+  var thBg = isDark ? '#1e293b' : '#f1f5f9';
+  var thColor = isDark ? '#e2e8f0' : 'inherit';
+  var borderColor = isDark ? '#334155' : '#e2e8f0';
+  var cellColor = isDark ? '#cbd5e1' : 'inherit';
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;color:' + cellColor + ';">';
+  html += '<tr style="background:' + thBg + ';color:' + thColor + ';"><th style="padding:8px;text-align:left;">Doc ID</th><th style="padding:8px;text-align:left;">Layer</th><th style="padding:8px;text-align:left;">Tiêu đề</th><th style="padding:8px;text-align:left;">Scope</th><th style="padding:8px;text-align:left;">Platforms</th><th style="padding:8px;text-align:left;">Ngày tạo</th></tr>';
   rules.forEach(function(r) {
     var layerBadge = layerLabels[r.content_layer] || r.content_layer;
     var scopeBadge = scopeLabels[r.scope] || r.scope;
     var plats = (r.platforms || []).join(", ") || "all";
     var date = r.created_at ? new Date(r.created_at).toLocaleDateString("vi-VN") : "—";
-    html += '<tr style="border-bottom:1px solid #e2e8f0;">';
+    html += '<tr style="border-bottom:1px solid ' + borderColor + ';">';
     html += '<td style="padding:8px;"><span class="doc-id-link">' + escHtml(r.doc_id) + '</span></td>';
     html += '<td style="padding:8px;">' + layerBadge + '</td>';
     html += '<td style="padding:8px;">' + escHtml(r.title || "—") + '</td>';
-    html += '<td style="padding:8px;"><span style="background:' + (r.scope === "core" ? "#dbeafe" : "#fef3c7") + ';padding:2px 8px;border-radius:4px;font-size:12px;">' + scopeBadge + '</span></td>';
+    var scopeColors = {core:"background:#dbeafe;color:#1e40af;", tenant:"background:#dcfce7;color:#166534;", campaign:"background:#fef3c7;color:#92400e;"};
+    html += '<td style="padding:8px;"><span style="' + (scopeColors[r.scope] || "background:#f1f5f9;color:#334155;") + 'padding:2px 8px;border-radius:4px;font-size:12px;">' + scopeBadge + '</span></td>';
     html += '<td style="padding:8px;font-size:12px;color:#64748b;">' + plats + '</td>';
     html += '<td style="padding:8px;font-size:12px;color:#64748b;">' + date + '</td>';
     html += '</tr>';
