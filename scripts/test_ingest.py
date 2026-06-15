@@ -36,15 +36,11 @@ from db.store import get_next_doc_id
 
 did_legal = get_next_doc_id("legal_source", "knowledge_base")
 did_op = get_next_doc_id("operating_rule", "knowledge_base")
-did_plat = get_next_doc_id("platform_policy", "knowledge_base")
-
 ok("legal_source prefix GSX-LEGAL", did_legal.startswith("GSX-LEGAL-"), did_legal)
 ok("operating_rule prefix GSX-OP", did_op.startswith("GSX-OP-"), did_op)
-ok("platform_policy prefix GSX-PLAT", did_plat.startswith("GSX-PLAT-"), did_plat)
 ok("legal doc_id >= 011", int(did_legal.split("-")[-1]) >= 11, did_legal)
 ok("op doc_id >= 014", int(did_op.split("-")[-1]) >= 14, did_op)
-ok("plat doc_id >= 006", int(did_plat.split("-")[-1]) >= 6, did_plat)
-print(f"  Generated: {did_legal}, {did_op}, {did_plat}")
+print(f"  Generated: {did_legal}, {did_op}")
 
 
 # ── Test 2: webfetch với text input ──────────────────────────────────────────
@@ -117,7 +113,7 @@ result = run_authoring_pipeline(PLATFORM_TEXT, "https://www.facebook.com/policie
 ok("pipeline success or warnings only", result.get("doc_id") is not None)
 ok("doc_id generated", bool(result.get("doc_id")))
 ok("content_layer valid", result.get("content_layer") in (
-    "legal_source", "operating_rule", "daily_tool", "platform_policy", "case_study"))
+    "legal_source", "operating_rule", "daily_tool", "case_study"))
 ok("body_md not empty", len(result.get("body_md", "")) > 50)
 print(f"  Result: doc_id={result.get('doc_id')}, layer={result.get('content_layer')}")
 print(f"  Success: {result.get('success')}, Errors: {result.get('errors')}")

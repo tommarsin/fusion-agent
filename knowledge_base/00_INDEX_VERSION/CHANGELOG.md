@@ -1,4 +1,4 @@
-# Changelog - Game Studio X Compliance Hub
+# Changelog - GameLaw AI
 
 Mọi thay đổi đáng kể trong Hub đều log ở đây.
 
@@ -205,7 +205,7 @@ Next steps:
 
 ## [2026-06-08] - v2.0 RELEASE - HTML Hub Build Complete
 
-🎉 **FINAL MILESTONE**: Game Studio X Compliance Hub v2.0 ready for deployment
+🎉 **FINAL MILESTONE**: GameLaw AI v2.0 ready for deployment
 
 - ADDED: `012_GSX_Compliance_Hub.html` (392 KB) - Interactive HTML Hub
 - REMOVED: `012_Interactive_Playbook_Placeholder.md` (superseded by HTML)

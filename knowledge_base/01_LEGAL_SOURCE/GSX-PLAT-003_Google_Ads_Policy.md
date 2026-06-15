@@ -1,7 +1,7 @@
 ---
 doc_id: GSX-PLAT-003
 title: "Google Ads Policy — Chính sách quảng cáo Google"
-type: platform_policy
+type: legal_source
 issuing_authority: Google LLC
 issued_date: 2024-01-01
 effective_date: 2024-01-01

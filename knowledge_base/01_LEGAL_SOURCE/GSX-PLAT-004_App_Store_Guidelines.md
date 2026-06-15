@@ -1,7 +1,7 @@
 ---
 doc_id: GSX-PLAT-004
 title: "Apple App Store Review Guidelines — Quy định marketing & metadata game"
-type: platform_policy
+type: legal_source
 issuing_authority: Apple Inc.
 issued_date: 2024-09-01
 effective_date: 2024-09-01

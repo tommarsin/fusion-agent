@@ -94,7 +94,7 @@ def run_tests(base_url: str) -> None:
     failed = 0
 
     print(f"\n{'=' * 65}")
-    print(f"  Fusion Agent — Acceptance Test: POST /ask")
+    print(f"  GameLaw AI Agent — Acceptance Test: POST /ask")
     print(f"  Endpoint: {base_url}/ask")
     print(f"{'=' * 65}\n")
 

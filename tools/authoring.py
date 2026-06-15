@@ -18,7 +18,6 @@ LAYER_PREFIX_MAP = {
     "legal_source":    "GSX-LEGAL",
     "operating_rule":  "GSX-OP",
     "daily_tool":      "GSX-TOOL",
-    "platform_policy": "GSX-PLAT",
     "case_study":      "GSX-CASE",
 }
 
@@ -31,7 +30,7 @@ REQUIRED_FIELDS: dict[str, list[str]] = {
     "legal_source":    ["title", "priority", "tags"],
     "operating_rule":  ["title", "tags"],
     "daily_tool":      ["title", "tags"],
-    "platform_policy": ["title", "priority", "tags"],
+    # platform_policy gộp vào legal_source (Item 9.3)
     "case_study":      ["title", "tags"],
 }
 
@@ -45,7 +44,7 @@ _SYSTEM_PROMPT = (
 _CLASSIFY_TEMPLATE = """Phân tích văn bản dưới đây và trả về JSON hợp lệ (không có markdown fence, không giải thích thêm):
 
 {{
-  "content_layer": "<legal_source|operating_rule|daily_tool|platform_policy|case_study>",
+  "content_layer": "<legal_source|operating_rule|daily_tool|case_study>",
   "title": "<tiêu đề ngắn gọn, tối đa 120 ký tự>",
   "issuing_authority": "<cơ quan ban hành, hoặc null>",
   "issued_date": "<YYYY-MM-DD hoặc null>",
@@ -61,8 +60,7 @@ _CLASSIFY_TEMPLATE = """Phân tích văn bản dưới đây và trả về JSON
 }}
 
 Quy tắc phân loại:
-- legal_source: luật, nghị định, thông tư, quyết định nhà nước Việt Nam
-- platform_policy: policy chính thức của Meta/TikTok/Google/Apple/Steam/Riot
+- legal_source: luật, nghị định, thông tư nhà nước VN + policy chính thức nền tảng (Meta/TikTok/Google/Apple/Steam/Riot)
 - operating_rule: quy trình, SOP, guideline vận hành nội bộ
 - daily_tool: checklist, template, hướng dẫn thực hành hàng ngày
 - case_study: tình huống, sự cố, bài học thực tiễn
@@ -182,6 +180,10 @@ def classify_and_extract(raw_text: str, source_url: Optional[str] = None) -> dic
     if not str(result.get("title") or "").strip():
         result["title"] = "Tài liệu chưa đặt tiêu đề"
 
+    # platform_policy → legal_source (Item 9.3 merge)
+    if result["content_layer"] == "platform_policy":
+        result["content_layer"] = "legal_source"
+
     # Validate enum values
     if result["content_layer"] not in VALID_LAYERS:
         result["content_layer"] = "operating_rule"
@@ -219,7 +221,7 @@ def build_body_md(extracted: dict) -> str:
 
     lines = [f"# {title}", ""]
 
-    if layer in ("legal_source", "platform_policy"):
+    if layer in ("legal_source",):
         lines += [
             "## 1. Thông tin cơ bản",
             "",
@@ -408,8 +410,9 @@ LAYER_TEMPLATES = {
         "sections": ["Thông tin cơ bản", "Tóm tắt nội dung quan trọng", "Yêu cầu bắt buộc", "Điều cấm"],
         "placeholder": "## Thông tin cơ bản\n- Cơ quan ban hành:\n- Ngày hiệu lực:\n\n## Tóm tắt nội dung quan trọng\n\n## Yêu cầu bắt buộc\n\n## Điều cấm\n",
     },
+    # platform_policy gộp vào legal_source (Item 9.3) — giữ alias để draft cũ không crash
     "platform_policy": {
-        "label": "Policy nền tảng",
+        "label": "Nguồn pháp lý (Policy nền tảng)",
         "sections": ["Thông tin cơ bản", "Tóm tắt nội dung quan trọng", "Yêu cầu bắt buộc", "Điều cấm"],
         "placeholder": "## Thông tin cơ bản\n- Nền tảng:\n- Link gốc:\n\n## Tóm tắt nội dung quan trọng\n\n## Yêu cầu bắt buộc\n\n## Điều cấm\n",
     },

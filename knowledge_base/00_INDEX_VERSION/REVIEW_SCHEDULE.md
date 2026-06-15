@@ -1,4 +1,4 @@
-# Review Schedule - Game Studio X Compliance Hub
+# Review Schedule - GameLaw AI
 
 > Lịch review định kỳ và trigger review bất thường.
 

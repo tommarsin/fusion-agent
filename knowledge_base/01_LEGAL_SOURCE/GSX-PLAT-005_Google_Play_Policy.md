@@ -1,7 +1,7 @@
 ---
 doc_id: GSX-PLAT-005
 title: "Google Play Developer Policy — Quy định store listing & nội dung game"
-type: platform_policy
+type: legal_source
 issuing_authority: Google LLC
 issued_date: 2024-01-01
 effective_date: 2024-01-01

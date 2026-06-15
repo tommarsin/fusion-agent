@@ -1,4 +1,4 @@
-# Master Index - Game Studio X Compliance Hub
+# Master Index - GameLaw AI
 
 > Index tất cả tài liệu trong Hub. Cập nhật mỗi khi thêm file mới.
 

@@ -1,7 +1,7 @@
 ---
 doc_id: GSX-PLAT-001
 title: "Meta Ads Policy — Chính sách quảng cáo Meta (Facebook/Instagram)"
-type: platform_policy
+type: legal_source
 issuing_authority: Meta Platforms, Inc.
 issued_date: 2024-01-01
 effective_date: 2024-01-01

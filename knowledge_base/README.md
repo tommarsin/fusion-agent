@@ -1,6 +1,6 @@
-# Game Studio X Compliance Hub
+# GameLaw AI — Knowledge Base
 
-> **Bộ tài liệu compliance tổng hợp cho team Community - VNGGames Game Studio 3.**
+> **Bộ tài liệu compliance tổng hợp cho team Community - VNGGames Game Studio X.**
 > Single source of truth cho mọi quy định pháp lý, chính sách nội bộ, và case study liên quan đến công việc community.
 
 ---

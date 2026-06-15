@@ -45,12 +45,18 @@ async def lifespan(app: FastAPI):
     except ImportError:
         logger.info("tools.ingest not found — /ingest và /approve stubs (item 3.3 pending)")
 
-    # Ensure audit_action_enum has 'checklist' (item 3.5)
+    # Ensure audit_action_enum has 'checklist' + 'reset' (item 3.5 / 9.6)
     try:
-        from db.store import ensure_checklist_action
+        from db.store import (
+            ensure_checklist_action, ensure_reset_action,
+            ensure_rule_crud_columns, ensure_notion_scan_action,
+        )
         ensure_checklist_action()
+        ensure_reset_action()
+        ensure_rule_crud_columns()
+        ensure_notion_scan_action()
     except Exception as e:
-        logger.debug(f"ensure_checklist_action startup (non-fatal): {e}")
+        logger.debug(f"ensure_audit_actions startup (non-fatal): {e}")
 
     chunks = loader.load_all_chunks(KB_DIR)
     retriever.build_index(chunks)
@@ -60,7 +66,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Fusion Agent — Game Content Compliance AI System",
+    title="GameLaw AI Agent — Game Content Compliance AI System",
     lifespan=lifespan,
 )
 
@@ -252,6 +258,91 @@ async def scan(request: Request):
     return JSONResponse(status_code=200, content=result)
 
 
+@app.post("/notion-scan")
+async def notion_scan(request: Request):
+    """
+    POST /notion-scan — Quét Notion Content Calendar (Item 9.5, Mod+).
+
+    Body JSON:
+      {
+        "database_id": "xxxxxxxx",      -- bắt buộc
+        "filter_status": "Approve",     -- tùy chọn: chỉ scan rows Status này
+        "dry_run": false,               -- true = không ghi ngược Notion
+        "platforms": ["website"],       -- platforms mặc định khi Tags không map
+        "tenant_id": null,
+        "caption_prop": "Caption",      -- override tên cột nếu khác
+        "tags_prop": "Tags",
+        "legal_check_prop": "Legal check",
+        "note_prop": "Legal note",      -- null để tắt ghi note
+        "status_prop": "Status"
+      }
+    Header: X-Role (Mod | Admin) — gate bởi RoleGateMiddleware.
+
+    Flow: đọc rows → scan_content() mỗi caption → ghi ngược checkbox Legal check.
+    """
+    from integrations import notion
+    from integrations.notion_scan import scan_notion_calendar
+    from db.store import insert_audit
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=422, content={"error": "invalid JSON body"})
+
+    database_id = (body.get("database_id") or "").strip()
+    if not database_id:
+        return JSONResponse(status_code=422, content={"error": "'database_id' là bắt buộc"})
+
+    if not notion.is_configured():
+        return JSONResponse(status_code=503, content={
+            "error": "NOTION_API_KEY chưa được cấu hình trên server (xem .env.deploy)."
+        })
+
+    actor_role = request.headers.get("X-Role", "User")
+
+    scan_options = {
+        "filter_status": body.get("filter_status"),
+        "dry_run": bool(body.get("dry_run", False)),
+        "platforms": body.get("platforms"),
+        "tenant_id": body.get("tenant_id"),
+        "caption_prop": body.get("caption_prop"),
+        "tags_prop": body.get("tags_prop"),
+        "legal_check_prop": body.get("legal_check_prop"),
+        "status_prop": body.get("status_prop"),
+        "scan_images": bool(body.get("scan_images", False)),
+        "asset_prop": body.get("asset_prop"),
+    }
+    if "note_prop" in body:  # cho phép null để tắt note
+        scan_options["note_prop"] = body.get("note_prop")
+
+    try:
+        summary = scan_notion_calendar(database_id, scan_options)
+    except notion.NotionError as e:
+        insert_audit(
+            actor_role=actor_role, action="notion_scan",
+            summary=f"notion_scan FAIL db={database_id[:40]}: {e}"[:500],
+            verdict="blocked",
+        )
+        status = e.status_code if e.status_code and e.status_code >= 400 else 502
+        return JSONResponse(status_code=status, content={"error": str(e)})
+    except Exception as e:
+        logger.error(f"/notion-scan lỗi: {e}")
+        return JSONResponse(status_code=500, content={"error": f"Lỗi nội bộ: {e}"})
+
+    insert_audit(
+        actor_role=actor_role,
+        action="notion_scan",
+        summary=(
+            f"notion_scan db={database_id[:40]} total={summary['total']} "
+            f"passed={summary['passed']} failed={summary['failed']} "
+            f"errors={summary['errors']} dry_run={summary['dry_run']}"
+        )[:500],
+        verdict="ok",
+    )
+
+    return JSONResponse(status_code=200, content=summary)
+
+
 @app.post("/ingest")
 async def ingest(request: Request):
     """
@@ -412,7 +503,7 @@ async def draft(request: Request):
     Body JSON:
       {
         "summary": "tóm tắt ý định...",
-        "content_layer": "operating_rule|daily_tool|case_study|legal_source|platform_policy"
+        "content_layer": "operating_rule|daily_tool|case_study|legal_source"
       }
     """
     from tools.authoring import generate_draft_from_summary
@@ -445,9 +536,171 @@ async def list_rules_route(request: Request):
     scope = request.query_params.get("scope")
     tenant_id_str = request.query_params.get("tenant_id")
     tenant_id = int(tenant_id_str) if tenant_id_str else None
+    include_deleted = request.query_params.get("include_deleted", "").lower() in ("1", "true", "yes")
 
-    rules = list_rules(content_layer=content_layer, scope=scope, tenant_id=tenant_id)
+    rules = list_rules(content_layer=content_layer, scope=scope, tenant_id=tenant_id,
+                       include_deleted=include_deleted)
     return JSONResponse(status_code=200, content={"rules": rules, "count": len(rules)})
+
+
+@app.put("/rules/{rule_id}")
+async def update_rule_route(rule_id: int, request: Request):
+    """
+    PUT /rules/{rule_id} — Chỉnh sửa rule (Item 9.4).
+    Role gate: Admin = tất cả layer; Mod = layer 2–5 only.
+    """
+    from db.store import get_rule, update_rule, insert_audit, MOD_EDITABLE_LAYERS
+    from rag import retriever
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=422, content={"error": "invalid JSON body"})
+
+    actor_role = request.headers.get("X-Role", "User")
+    from tools.role_gate import normalize_role
+    actor_role = normalize_role(actor_role)
+
+    if actor_role == "User":
+        return JSONResponse(status_code=403, content={"error": "Yêu cầu quyền Mod hoặc Admin", "your_role": actor_role})
+
+    rule = get_rule(rule_id)
+    if not rule:
+        return JSONResponse(status_code=404, content={"error": f"Rule id={rule_id} không tồn tại"})
+    if rule.get("status") == "deleted":
+        return JSONResponse(status_code=410, content={"error": "Rule đã bị xóa"})
+
+    if actor_role == "Mod" and rule["content_layer"] not in MOD_EDITABLE_LAYERS:
+        return JSONResponse(status_code=403, content={
+            "error": f"Mod không có quyền sửa layer '{rule['content_layer']}' (chỉ Admin)",
+            "your_role": actor_role,
+        })
+
+    updates = {}
+    for key in ("title", "body_md", "platforms", "metadata_json", "source_url"):
+        if key in body:
+            updates[key] = body[key]
+
+    if not updates:
+        return JSONResponse(status_code=422, content={"error": "Không có field nào để update"})
+
+    edit_reason = (body.get("edit_reason") or "").strip()
+    updated = update_rule(rule_id, updates, edited_by_role=actor_role, edit_reason=edit_reason)
+
+    insert_audit(
+        actor_role=actor_role,
+        action="edit_rule",
+        summary=f"Edit rule {rule['doc_id']}: {edit_reason or 'no reason'}"[:500],
+        verdict="ok",
+    )
+
+    retriever.reindex()
+
+    return JSONResponse(status_code=200, content={"rule": updated, "message": "Đã cập nhật rule"})
+
+
+@app.delete("/rules/{rule_id}")
+async def delete_rule_route(rule_id: int, request: Request):
+    """
+    DELETE /rules/{rule_id} — Soft delete rule (Item 9.4).
+    Role gate: Admin = tất cả layer; Mod = layer 2–5 only.
+    """
+    from db.store import get_rule, delete_rule, insert_audit, MOD_EDITABLE_LAYERS
+    from rag import retriever
+
+    actor_role = request.headers.get("X-Role", "User")
+    from tools.role_gate import normalize_role
+    actor_role = normalize_role(actor_role)
+
+    if actor_role == "User":
+        return JSONResponse(status_code=403, content={"error": "Yêu cầu quyền Mod hoặc Admin", "your_role": actor_role})
+
+    rule = get_rule(rule_id)
+    if not rule:
+        return JSONResponse(status_code=404, content={"error": f"Rule id={rule_id} không tồn tại"})
+    if rule.get("status") == "deleted":
+        return JSONResponse(status_code=410, content={"error": "Rule đã bị xóa trước đó"})
+
+    if actor_role == "Mod" and rule["content_layer"] not in MOD_EDITABLE_LAYERS:
+        return JSONResponse(status_code=403, content={
+            "error": f"Mod không có quyền xóa layer '{rule['content_layer']}' (chỉ Admin)",
+            "your_role": actor_role,
+        })
+
+    delete_rule(rule_id, deleted_by_role=actor_role)
+
+    insert_audit(
+        actor_role=actor_role,
+        action="delete_rule",
+        summary=f"Soft delete rule {rule['doc_id']}",
+        verdict="ok",
+    )
+
+    retriever.reindex()
+
+    return JSONResponse(status_code=200, content={"message": f"Đã xóa rule {rule['doc_id']}", "doc_id": rule["doc_id"]})
+
+
+@app.get("/rules/{rule_id}/history")
+async def rule_history_route(rule_id: int, request: Request):
+    """
+    GET /rules/{rule_id}/history — Lịch sử chỉnh sửa rule (Item 9.4).
+    Ai cũng xem được (User+).
+    """
+    from db.store import get_rule, list_rule_versions
+
+    rule = get_rule(rule_id)
+    if not rule:
+        return JSONResponse(status_code=404, content={"error": f"Rule id={rule_id} không tồn tại"})
+
+    versions = list_rule_versions(rule_id)
+    return JSONResponse(status_code=200, content={
+        "rule_id": rule_id,
+        "doc_id": rule["doc_id"],
+        "current_version": rule.get("version", 1),
+        "versions": versions,
+        "count": len(versions),
+    })
+
+
+@app.post("/reset")
+async def reset(request: Request):
+    """
+    POST /reset — Reset về dữ liệu mặc định (Item 9.6, Admin only).
+
+    Body JSON: {"confirm": true}
+    Xóa toàn bộ custom rules (DB) + file KB custom + rebuild BM25 index.
+    Giữ nguyên submissions và audit_log.
+    """
+    from db.store import reset_custom_rules, delete_custom_kb_files, insert_audit
+    from rag import retriever
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=422, content={"error": "invalid JSON body"})
+
+    if not body.get("confirm"):
+        return JSONResponse(status_code=400, content={"error": "'confirm: true' là bắt buộc"})
+
+    actor_role = request.headers.get("X-Role", "User")
+
+    result = reset_custom_rules()
+    deleted_files = delete_custom_kb_files(KB_DIR)
+    retriever.reindex()
+
+    insert_audit(
+        actor_role=actor_role,
+        action="reset",
+        summary=f"Reset về dữ liệu mặc định — xóa {result['deleted_count']} rules, {deleted_files} files",
+        verdict="ok",
+    )
+
+    return JSONResponse(status_code=200, content={
+        "deleted_rules": result["deleted_count"],
+        "deleted_files": deleted_files,
+        "message": "Đã reset thành công",
+    })
 
 
 @app.get("/audit")

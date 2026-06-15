@@ -1,4 +1,4 @@
-# Fusion Agent — Game Content Compliance AI System
+# GameLaw AI Agent — Game Content Compliance AI System
 
 An AI compliance agent for game marketing & operations teams.
 Consolidates Vietnamese law, platform policies (Meta/TikTok/Google), and internal rules into a single source of truth.

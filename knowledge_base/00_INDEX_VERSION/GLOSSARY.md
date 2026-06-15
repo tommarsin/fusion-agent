@@ -7,7 +7,7 @@ maintained_by: Hub Owner
 review_frequency: 6 tháng/lần
 ---
 
-# Game Studio X Compliance Hub - Glossary
+# GameLaw AI - Glossary
 
 > **Mục đích**: Tra cứu nhanh các viết tắt và thuật ngữ chuyên môn xuất hiện trong Hub.
 > Khi đọc một quy định/case study và gặp thuật ngữ chưa rõ → tra ở đây.
@@ -20,7 +20,7 @@ review_frequency: 6 tháng/lần
 |---|---|---|
 | **VNG** | VNG Corporation | Công ty mẹ - tập đoàn công nghệ Việt Nam |
 | **VNGGames** | VNG Games | Mảng kinh doanh game của VNG |
-| **Game Studio X** | Game Studio 3 | Một trong các studio thuộc VNGGames - đang phát hành nhiều tựa game lớn |
+| **Game Studio X** | Game Studio X (tên ẩn danh) | Một trong các studio thuộc VNGGames - đang phát hành nhiều tựa game lớn |
 | **LCCA** | Legal, Compliance & Corporate Affairs | Bộ phận Pháp chế, Tuân thủ và Đối ngoại của VNG |
 | **CBC** | Corporate Branding & Communications | Bộ phận Truyền thông Doanh nghiệp của VNG |
 | **HR** | Human Resources | Bộ phận Nhân sự |

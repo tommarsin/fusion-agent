@@ -19,7 +19,7 @@ LAYER_PREFIX: dict[str, str] = {
     "legal_source":    "GSX-LEGAL",
     "operating_rule":  "GSX-OP",
     "daily_tool":      "GSX-TOOL",
-    "platform_policy": "GSX-PLAT",
+    # "platform_policy": "GSX-PLAT",  # gộp vào legal_source (Item 9.3); DB enum giữ lại backward compat
     "case_study":      "GSX-CASE",
 }
 
@@ -373,6 +373,131 @@ def list_submissions(status: Optional[str] = None) -> list:
 # ── Audit ─────────────────────────────────────────────────────────────────────
 
 
+def ensure_reset_action() -> None:
+    """Mở rộng audit_action_enum để nhận 'reset'. Idempotent."""
+    try:
+        conn = _get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM pg_enum WHERE enumlabel = 'reset' "
+            "AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'audit_action_enum')"
+        )
+        if not cur.fetchone():
+            cur.execute("ALTER TYPE audit_action_enum ADD VALUE IF NOT EXISTS 'reset'")
+            conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.debug(f"ensure_reset_action (non-fatal): {e}")
+
+
+def ensure_notion_scan_action() -> None:
+    """
+    Mở rộng audit_action_enum + audit_log CHECK constraint để nhận 'notion_scan'
+    (Item 9.5). Idempotent.
+    """
+    try:
+        conn = _get_conn()
+        cur = conn.cursor()
+
+        # 1. enum value
+        cur.execute(
+            "SELECT 1 FROM pg_enum WHERE enumlabel = 'notion_scan' "
+            "AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'audit_action_enum')"
+        )
+        if not cur.fetchone():
+            cur.execute("ALTER TYPE audit_action_enum ADD VALUE IF NOT EXISTS 'notion_scan'")
+            conn.commit()
+
+        # 2. CHECK constraint (nếu schema dùng CHECK thay vì enum)
+        cur.execute(
+            """
+            SELECT check_clause FROM information_schema.check_constraints
+            WHERE constraint_name = 'audit_log_action_check'
+            """
+        )
+        row = cur.fetchone()
+        if row and "notion_scan" not in (row[0] or ""):
+            cur.execute("ALTER TABLE audit_log DROP CONSTRAINT IF EXISTS audit_log_action_check")
+            cur.execute(
+                """
+                ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_check
+                CHECK (action = ANY(
+                    ARRAY['ask','scan','ingest','approve','checklist','reset',
+                          'edit_rule','delete_rule','notion_scan']
+                ))
+                """
+            )
+            conn.commit()
+
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.debug(f"ensure_notion_scan_action (non-fatal): {e}")
+
+
+def reset_custom_rules() -> dict:
+    """
+    Xóa toàn bộ records trong bảng rules (custom rules nạp qua /ingest).
+    KB gốc không lưu trong DB nên DELETE FROM rules xóa hết là đúng.
+    KHÔNG xóa rule_submissions hay audit_log.
+    """
+    conn = _get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM rules")
+        deleted = cur.rowcount
+        cur.execute("DELETE FROM rule_versions")
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+    logger.info(f"reset_custom_rules: deleted {deleted} rules")
+    return {"deleted_count": deleted}
+
+
+def delete_custom_kb_files(kb_dir: str) -> int:
+    """
+    Xóa file .md trong KB mà KHÔNG nằm trong ORIGINAL_FILES.txt.
+    Trả số file đã xóa.
+    """
+    kb_path = Path(kb_dir)
+    index_file = kb_path / "00_INDEX_VERSION" / "ORIGINAL_FILES.txt"
+    if not index_file.exists():
+        logger.warning("ORIGINAL_FILES.txt not found — skip KB cleanup")
+        return 0
+
+    original_files: set[str] = set()
+    for line in index_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            original_files.add(line.replace("\\", "/"))
+
+    scan_dirs = ["01_LEGAL_SOURCE", "02_GSX_OPERATING_RULES", "03_DAILY_TOOLS", "04_CASE_STUDIES"]
+    deleted = 0
+    for subdir in scan_dirs:
+        dir_path = kb_path / subdir
+        if not dir_path.exists():
+            continue
+        for md_file in dir_path.glob("*.md"):
+            rel = f"{subdir}/{md_file.name}"
+            if rel not in original_files:
+                md_file.unlink()
+                logger.info(f"Deleted custom KB file: {rel}")
+                deleted += 1
+
+    # Also check root-level .md files (unlikely but safe)
+    for md_file in kb_path.glob("*.md"):
+        rel = md_file.name
+        if rel not in original_files:
+            md_file.unlink()
+            logger.info(f"Deleted custom KB file: {rel}")
+            deleted += 1
+
+    return deleted
+
+
 def ensure_checklist_action() -> None:
     """Mở rộng audit_log CHECK constraint để nhận 'checklist'. Idempotent."""
     try:
@@ -395,7 +520,7 @@ def ensure_checklist_action() -> None:
                 """
                 ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_check
                 CHECK (action = ANY(
-                    ARRAY['ask','scan','ingest','approve','checklist']
+                    ARRAY['ask','scan','ingest','approve','checklist','reset']
                 ))
                 """
             )
@@ -407,14 +532,263 @@ def ensure_checklist_action() -> None:
         logger.debug(f"ensure_checklist_action (non-fatal): {e}")
 
 
+def ensure_rule_crud_columns() -> None:
+    """
+    Thêm cột deleted_at, deleted_by vào rules + edited_by, edit_reason, edit_type vào rule_versions.
+    Thêm enum value 'deleted' cho rule_status_enum.
+    Thêm 'edit_rule', 'delete_rule' cho audit_action_enum.
+    Idempotent.
+    """
+    try:
+        conn = _get_conn()
+        cur = conn.cursor()
+
+        cur.execute("ALTER TABLE rules ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ")
+        cur.execute("ALTER TABLE rules ADD COLUMN IF NOT EXISTS deleted_by TEXT")
+
+        cur.execute("ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS edited_by TEXT")
+        cur.execute("ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS edit_reason TEXT")
+        cur.execute("ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS edit_type TEXT DEFAULT 'create'")
+
+        cur.execute(
+            "SELECT 1 FROM pg_enum WHERE enumlabel = 'deleted' "
+            "AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'rule_status_enum')"
+        )
+        if not cur.fetchone():
+            cur.execute("ALTER TYPE rule_status_enum ADD VALUE IF NOT EXISTS 'deleted'")
+
+        for val in ('edit_rule', 'delete_rule'):
+            cur.execute(
+                "SELECT 1 FROM pg_enum WHERE enumlabel = %s "
+                "AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'audit_action_enum')",
+                (val,),
+            )
+            if not cur.fetchone():
+                cur.execute(f"ALTER TYPE audit_action_enum ADD VALUE IF NOT EXISTS '{val}'")
+
+        # Update audit_log CHECK constraint if it exists
+        cur.execute(
+            """
+            SELECT check_clause FROM information_schema.check_constraints
+            WHERE constraint_name = 'audit_log_action_check'
+            """
+        )
+        row = cur.fetchone()
+        if row and ("edit_rule" not in (row[0] or "") or "delete_rule" not in (row[0] or "")):
+            cur.execute("ALTER TABLE audit_log DROP CONSTRAINT IF EXISTS audit_log_action_check")
+            cur.execute(
+                """
+                ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_check
+                CHECK (action = ANY(
+                    ARRAY['ask','scan','ingest','approve','checklist','reset','edit_rule','delete_rule']
+                ))
+                """
+            )
+
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.debug(f"ensure_rule_crud_columns (non-fatal): {e}")
+
+
+def get_rule(rule_id: int) -> Optional[dict]:
+    """Lấy 1 rule theo id. Trả None nếu không tìm thấy."""
+    try:
+        conn = _get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, doc_id, content_layer, scope, tenant_id, title,
+                   platforms, source_url, related_core_doc_id, created_at,
+                   body_md, status, metadata_json, version
+            FROM rules WHERE id = %s
+            """,
+            (rule_id,),
+        )
+        r = cur.fetchone()
+        cur.close()
+        conn.close()
+        if not r:
+            return None
+        return {
+            "id": r[0], "doc_id": r[1], "content_layer": r[2], "scope": r[3],
+            "tenant_id": r[4], "title": r[5],
+            "platforms": r[6] if isinstance(r[6], list) else [],
+            "source_url": r[7], "related_core_doc_id": r[8],
+            "created_at": r[9].isoformat() if r[9] else None,
+            "body_md": r[10] or "", "status": r[11],
+            "metadata_json": r[12] if isinstance(r[12], dict) else {},
+            "version": r[13],
+        }
+    except Exception as e:
+        logger.error(f"get_rule({rule_id}): {e}")
+        return None
+
+
+MOD_EDITABLE_LAYERS = {"operating_rule", "daily_tool", "case_study", "platform_policy"}
+
+
+def update_rule(
+    rule_id: int,
+    updates: dict,
+    edited_by_role: str,
+    edit_reason: str = "",
+) -> Optional[dict]:
+    """
+    Update rule + snapshot current version vào rule_versions trước khi update.
+    Chỉ cho phép thay đổi: title, body_md, platforms, metadata_json, source_url.
+    """
+    rule = get_rule(rule_id)
+    if not rule:
+        return None
+
+    conn = _get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO rule_versions
+              (rule_id, version, raw_text, structured_md, source_url, edited_by, edit_reason, edit_type)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'edit')
+            """,
+            (
+                rule_id,
+                rule["version"],
+                rule["body_md"],
+                rule["body_md"],
+                rule["source_url"],
+                edited_by_role,
+                edit_reason,
+            ),
+        )
+
+        set_parts = ["version = version + 1", "updated_at = NOW()"]
+        params: list = []
+        allowed = {"title", "body_md", "source_url"}
+        for field in allowed:
+            if field in updates:
+                set_parts.append(f"{field} = %s")
+                params.append(updates[field])
+        if "platforms" in updates:
+            plats = updates["platforms"]
+            if isinstance(plats, list):
+                set_parts.append("platforms = %s::platform_enum[]")
+                params.append("{" + ",".join(str(p) for p in plats) + "}")
+        if "metadata_json" in updates:
+            set_parts.append("metadata_json = %s::jsonb")
+            params.append(json.dumps(updates["metadata_json"], ensure_ascii=False))
+
+        params.append(rule_id)
+        cur.execute(
+            f"UPDATE rules SET {', '.join(set_parts)} WHERE id = %s",
+            params,
+        )
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+    return get_rule(rule_id)
+
+
+def delete_rule(
+    rule_id: int,
+    deleted_by_role: str,
+) -> bool:
+    """Soft delete: SET status='deleted', deleted_at, deleted_by."""
+    ensure_rule_crud_columns()
+    rule = get_rule(rule_id)
+    if not rule:
+        return False
+
+    conn = _get_conn()
+    cur = conn.cursor()
+    try:
+        # Snapshot before delete
+        cur.execute(
+            """
+            INSERT INTO rule_versions
+              (rule_id, version, raw_text, structured_md, source_url, edited_by, edit_reason, edit_type)
+            VALUES (%s, %s, %s, %s, %s, %s, 'soft delete', 'delete')
+            """,
+            (
+                rule_id,
+                rule["version"],
+                rule["body_md"],
+                rule["body_md"],
+                rule["source_url"],
+                deleted_by_role,
+            ),
+        )
+
+        cur.execute(
+            """
+            UPDATE rules
+            SET status = 'deleted'::rule_status_enum,
+                deleted_at = NOW(),
+                deleted_by = %s,
+                updated_at = NOW()
+            WHERE id = %s
+            """,
+            (deleted_by_role, rule_id),
+        )
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+    logger.info(f"delete_rule: id={rule_id} soft-deleted by {deleted_by_role}")
+    return True
+
+
+def list_rule_versions(rule_id: int) -> list:
+    """Trả danh sách versions của 1 rule, DESC theo version."""
+    try:
+        conn = _get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, rule_id, version, raw_text, structured_md, source_url,
+                   fetched_at, created_at, edited_by, edit_reason, edit_type
+            FROM rule_versions
+            WHERE rule_id = %s
+            ORDER BY version DESC
+            """,
+            (rule_id,),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return [
+            {
+                "id": r[0], "rule_id": r[1], "version": r[2],
+                "raw_text": r[3], "structured_md": r[4], "source_url": r[5],
+                "fetched_at": r[6].isoformat() if r[6] else None,
+                "created_at": r[7].isoformat() if r[7] else None,
+                "edited_by": r[8], "edit_reason": r[9], "edit_type": r[10],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.error(f"list_rule_versions({rule_id}): {e}")
+        return []
+
+
 def list_rules(content_layer: Optional[str] = None, scope: Optional[str] = None,
-               tenant_id: Optional[int] = None, status: str = "approved") -> list:
+               tenant_id: Optional[int] = None, status: str = "approved",
+               include_deleted: bool = False) -> list:
     """Trả danh sách rules từ DB (custom rules nạp qua /ingest)."""
     try:
         conn = _get_conn()
         cur = conn.cursor()
-        clauses = ["status = %s"]
-        params: list = [status]
+        clauses: list[str] = []
+        params: list = []
+        if include_deleted:
+            clauses.append("status IN ('approved', 'deleted')")
+        else:
+            clauses.append("status = %s")
+            params.append(status)
         if content_layer:
             clauses.append("content_layer::text = %s")
             params.append(content_layer)
@@ -429,7 +803,7 @@ def list_rules(content_layer: Optional[str] = None, scope: Optional[str] = None,
             f"""
             SELECT id, doc_id, content_layer, scope, tenant_id, title,
                    platforms, source_url, related_core_doc_id, created_at,
-                   body_md
+                   body_md, status
             FROM rules
             WHERE {where}
             ORDER BY created_at DESC
@@ -453,6 +827,7 @@ def list_rules(content_layer: Optional[str] = None, scope: Optional[str] = None,
                 "related_core_doc_id": r[8],
                 "created_at": r[9].isoformat() if r[9] else None,
                 "body_md": r[10] or "",
+                "status": r[11] or "approved",
             }
             for r in rows
         ]

@@ -257,10 +257,10 @@ def _llm_detect(
         logger.warning("LLM chưa config — bỏ qua LLM detect")
         return []
 
-    # Context KB từ chunks (top 5, ưu tiên platform policy + operating rules)
-    platform_chunks = [c for c in chunks if c.get("content_layer") == "platform_policy"]
-    op_chunks = [c for c in chunks if c.get("content_layer") in ("operating_rule", "legal_source")]
-    selected = (platform_chunks + op_chunks)[:5]
+    # Context KB từ chunks (top 5, ưu tiên legal_source + operating rules)
+    legal_chunks = [c for c in chunks if c.get("content_layer") in ("legal_source", "platform_policy")]
+    op_chunks = [c for c in chunks if c.get("content_layer") == "operating_rule"]
+    selected = (legal_chunks + op_chunks)[:5]
 
     context_parts = []
     for c in selected:

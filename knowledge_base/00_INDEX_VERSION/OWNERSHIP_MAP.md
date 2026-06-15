@@ -1,4 +1,4 @@
-# Ownership Map - Game Studio X Compliance Hub
+# Ownership Map - GameLaw AI
 
 > Ai phụ trách gì - khi cần update hoặc có thắc mắc, liên hệ đúng người.
 

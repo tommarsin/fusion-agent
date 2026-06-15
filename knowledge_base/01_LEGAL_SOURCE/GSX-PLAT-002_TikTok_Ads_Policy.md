@@ -1,7 +1,7 @@
 ---
 doc_id: GSX-PLAT-002
 title: "TikTok Ads Policy — Chính sách quảng cáo TikTok"
-type: platform_policy
+type: legal_source
 issuing_authority: TikTok Pte. Ltd.
 issued_date: 2024-01-01
 effective_date: 2024-01-01

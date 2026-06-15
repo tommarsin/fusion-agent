@@ -22,7 +22,7 @@ FOLDER_TO_LAYER: dict[str, str] = {
     "02_GSX_OPERATING_RULES": "operating_rule",
     "03_DAILY_TOOLS": "daily_tool",
     "04_CASE_STUDIES": "case_study",
-    "06_PLATFORM_POLICY": "platform_policy",
+    # "06_PLATFORM_POLICY" gộp vào 01_LEGAL_SOURCE (Item 9.3)
 }
 
 # Các thư mục bỏ qua (template + index không có giá trị retrieve)

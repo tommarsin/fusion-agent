@@ -22,10 +22,13 @@ logger = logging.getLogger(__name__)
 _ROLE_RANK: dict[str, int] = {"User": 0, "Mod": 1, "Admin": 2}
 
 # Minimum role rank cần thiết — paths không có = mở cho tất cả
+# Note: /rules/{id} PUT/DELETE có role gate chi tiết trong handler (layer-based)
 _MIN_RANK: dict[str, int] = {
     "/ingest": 1,        # Mod+
+    "/notion-scan": 1,   # Mod+ (item 9.5 — trigger scan Content Calendar)
     "/draft": 1,         # Mod+ (item 7.4 guided authoring)
     "/approve": 2,       # Admin only
+    "/reset": 2,         # Admin only (item 9.6)
     "/audit": 2,         # Admin only
     "/submissions": 1,   # Mod+ (item 4.1)
 }
