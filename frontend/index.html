@@ -619,10 +619,10 @@ init();
 .ai-section.active { display: block; }
 /* ── 2-column IO (Chat & Scanner) khi phóng to full + lịch sử quét ── */
 #ai-panel.full #ai-body { max-width: 1500px; }
-#ai-panel.full .ai-section.io-split { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 24px; align-items: start; }
-#ai-panel.full .ai-section.io-split .ai-io-input { position: sticky; top: 0; align-self: start; }
-#ai-panel.full .ai-section.io-split .ai-io-output { margin-top: 0; max-height: 80vh; overflow-y: auto; }
-#ai-panel.full .ai-section.io-split .ai-io-full { grid-column: 1 / -1; }
+#ai-panel.full .ai-section.active.io-split { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 24px; align-items: start; }
+#ai-panel.full .ai-section.active.io-split .ai-io-input { position: sticky; top: 0; align-self: start; }
+#ai-panel.full .ai-section.active.io-split .ai-io-output { margin-top: 0; max-height: 80vh; overflow-y: auto; }
+#ai-panel.full .ai-section.active.io-split .ai-io-full { grid-column: 1 / -1; }
 .scan-history { margin-top: 22px; border-top: 1px solid #e2e8f0; padding-top: 14px; }
 .scan-history h4 { font-size: 13px; font-weight: 700; color: #334155; margin: 0 0 10px; display: flex; align-items: center; justify-content: space-between; }
 .sh-clear { font-size: 11px; color: #94a3b8; cursor: pointer; font-weight: 500; }
