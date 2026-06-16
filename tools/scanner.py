@@ -46,7 +46,10 @@ _GAMBLING_KEYWORDS = re.compile(
     r"\b(cá độ|ca do|cá cược|ca cuoc|đặt cược|dat cuoc|kèo nhà cái|keo nha cai"
     r"|casino|slot machine|nhà cái|nha cai|baccarat|poker có tiền"
     r"|cược thể thao|cuoc the thao|link cá độ|link ca do"
-    r"|quảng bá cá độ|tham gia cá độ)\b",
+    r"|quảng bá cá độ|tham gia cá độ"
+    r"|rút tiền thật|rut tien that|tiền thật|tien that"
+    r"|nạp.{0,5}nhận.{0,10}(k|K|nghìn|triệu|đồng|VND)"
+    r"|đổi thưởng tiền mặt|doi thuong tien mat)\b",
     re.IGNORECASE | re.UNICODE,
 )
 
@@ -65,7 +68,9 @@ _SUPERLATIVE_PATTERN = re.compile(
     r"|khủng nhất|lớn nhất|hot nhất|nhanh nhất|rẻ nhất|ngon nhất|hay nhất"
     r"|chuyên nghiệp nhất|uy tín nhất|đáng tin nhất|phổ biến nhất"
     r"|best\b|top 1\b|#1\b|number one|leading|ultimate|greatest"
-    r"|only one|exclusive deal|unmatched|unrivaled|unbeatable)\b",
+    r"|only one|exclusive deal|unmatched|unrivaled|unbeatable"
+    r"|cam kết thắng|chắc chắn thắng|thắng 100|win 100)\b"
+    r"|(?<!\d)100\s*%",
     re.IGNORECASE | re.UNICODE,
 )
 
@@ -201,6 +206,25 @@ def _hard_rule_detect(content: str, platforms: list[str]) -> list[dict]:
             "quote": match_prof.group(0),
             "reason": "Ngôn ngữ tục tĩu vi phạm GSX-OP-002 nhóm 4I. Red-line tuyệt đối.",
             "severity": "redline",
+        })
+
+    # 6. Nhắm trẻ em dưới 16 — GSX-OP-002 4D + Luật Trẻ em 2016
+    _minor_pattern = re.compile(
+        r"(trẻ em.{0,10}(từ|trên|dưới)\s*\d+\s*tuổi"
+        r"|dưới\s*1[0-6]\s*tuổi"
+        r"|bé\s*\d+\s*tuổi.{0,10}(chơi|tải|download))",
+        re.IGNORECASE | re.UNICODE,
+    )
+    match_minor = _minor_pattern.search(content)
+    if match_minor:
+        violations.append({
+            "rule_doc_id": "GSX-OP-002",
+            "quote": match_minor.group(0),
+            "reason": (
+                "Nội dung nhắm đến trẻ em vi phạm GSX-OP-002 nhóm 4D "
+                "và Luật Trẻ em 2016. Game phải tuân thủ phân loại độ tuổi."
+            ),
+            "severity": "major",
         })
 
     return violations

@@ -102,7 +102,7 @@ async def serve_ui():
     """Serve demo UI — không ghi audit, không gate role."""
     if not _UI_FILE.exists():
         return JSONResponse(status_code=404, content={"error": "UI file not found. Run item 4.1 setup."})
-    return FileResponse(str(_UI_FILE), media_type="text/html")
+    return FileResponse(str(_UI_FILE), media_type="text/html", headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
 
 
 # ── Submissions list (item 4.1 — Mod+ xem pending để duyệt) ──────────────────
@@ -145,6 +145,7 @@ async def _handle_ask(request: Request):
 
     tenant_id = body.get("tenant_id")  # int | None
     platforms = body.get("platforms")  # list[str] | None
+    history = body.get("history")  # list[{role, content}] | None
     actor_role = request.headers.get("X-Role", "User")
 
     want_stream = bool(body.get("stream")) or (
@@ -161,6 +162,7 @@ async def _handle_ask(request: Request):
                     tenant_id=tenant_id,
                     platforms=platforms,
                     actor_role=actor_role,
+                    history=history,
                 ):
                     yield "data: " + json.dumps(ev, ensure_ascii=False) + "\n\n"
             except Exception as e:  # phòng hờ — generator không nên raise
@@ -187,6 +189,7 @@ async def _handle_ask(request: Request):
         tenant_id=tenant_id,
         platforms=platforms,
         actor_role=actor_role,
+        history=history,
     )
     return JSONResponse(status_code=200, content=result)
 
@@ -376,7 +379,7 @@ async def ingest(request: Request):
     if not source:
         return JSONResponse(status_code=422, content={"error": "'source' là bắt buộc (URL hoặc text)"})
 
-    scope = (body.get("scope") or "core").strip().lower()
+    scope = (body.get("scope") or "tenant").strip().lower()
     tenant_id = body.get("tenant_id")
     campaign_id = body.get("campaign_id")
     note = body.get("note")
@@ -685,22 +688,65 @@ async def reset(request: Request):
 
     actor_role = request.headers.get("X-Role", "User")
 
-    result = reset_custom_rules()
-    deleted_files = delete_custom_kb_files(KB_DIR)
-    retriever.reindex()
+    try:
+        result = reset_custom_rules()
+        deleted_files = delete_custom_kb_files(KB_DIR)
+        retriever.reindex()
 
-    insert_audit(
-        actor_role=actor_role,
-        action="reset",
-        summary=f"Reset về dữ liệu mặc định — xóa {result['deleted_count']} rules, {deleted_files} files",
-        verdict="ok",
-    )
+        insert_audit(
+            actor_role=actor_role,
+            action="reset",
+            summary=f"Reset về dữ liệu mặc định — xóa {result['deleted_count']} rules, {deleted_files} files",
+            verdict="ok",
+        )
 
-    return JSONResponse(status_code=200, content={
-        "deleted_rules": result["deleted_count"],
-        "deleted_files": deleted_files,
-        "message": "Đã reset thành công",
-    })
+        return JSONResponse(status_code=200, content={
+            "deleted_rules": result["deleted_count"],
+            "deleted_files": deleted_files,
+            "message": "Đã reset thành công",
+        })
+    except Exception as e:
+        logger.error(f"reset failed: {e}")
+        return JSONResponse(status_code=500, content={"error": f"Reset thất bại: {e}"})
+
+
+@app.get("/kb-stats")
+async def kb_stats():
+    """GET /kb-stats — Knowledge Base document counts by layer."""
+    kb_path = Path(KB_DIR)
+    layer_map = {
+        "01_LEGAL_SOURCE": "Legal Source",
+        "02_GSX_OPERATING_RULES": "Operating Rules",
+        "03_DAILY_TOOLS": "Daily Tools",
+        "04_CASE_STUDIES": "Case Studies",
+    }
+    layers = {}
+    total = 0
+    for folder, label in layer_map.items():
+        folder_path = kb_path / folder
+        if folder_path.is_dir():
+            count = len([f for f in folder_path.glob("*.md") if f.name != "README.md"])
+            layers[label] = count
+            total += count
+    return JSONResponse(status_code=200, content={"total": total, "layers": layers})
+
+
+@app.get("/dashboard")
+async def dashboard(request: Request):
+    """
+    GET /dashboard — Usage analytics (Mod+ xem được).
+    Query param: days (default 30, max 90).
+    """
+    from db.store import get_dashboard_stats
+
+    try:
+        days = int(request.query_params.get("days", 30))
+        days = min(max(days, 1), 90)
+    except (ValueError, TypeError):
+        days = 30
+
+    stats = get_dashboard_stats(days=days)
+    return JSONResponse(status_code=200, content=stats)
 
 
 @app.get("/audit")

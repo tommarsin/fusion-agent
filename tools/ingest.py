@@ -47,8 +47,8 @@ def _parse_fetched_at(iso_str: Optional[str]) -> Optional[datetime]:
 
 def handle_ingest(
     source: str,
-    scope: str,
-    actor_role: str,
+    scope: str = "tenant",
+    actor_role: str = "Mod",
     tenant_id: Optional[int] = None,
     campaign_id: Optional[int] = None,
     note: Optional[str] = None,
@@ -59,9 +59,7 @@ def handle_ingest(
 
     Routing:
     - User          → 403
-    - Mod + core    → submission pending (chờ Admin duyệt)
-    - Mod + tenant  → rule live ngay (siết-only, scope=tenant|campaign)
-    - Admin         → rule live ngay bất kỳ scope
+    - Mod / Admin   → rule live ngay
 
     Returns (http_status_code, response_dict).
     """
@@ -75,11 +73,9 @@ def handle_ingest(
     if role == "User":
         return 403, {"error": "Forbidden: User không có quyền /ingest"}
 
-    # ── Validate đầu vào ──────────────────────────────────────────────────────
+    # scope no longer used for routing, default to tenant
     if scope not in ("core", "tenant", "campaign"):
-        return 422, {"error": "scope phải là core|tenant|campaign"}
-    if scope in ("tenant", "campaign") and not tenant_id:
-        return 422, {"error": "tenant_id bắt buộc khi scope=tenant hoặc scope=campaign"}
+        scope = "tenant"
 
     # ── Lấy nội dung ──────────────────────────────────────────────────────────
     source_url: Optional[str] = None
@@ -104,38 +100,7 @@ def handle_ingest(
 
     input_hash = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
 
-    # ── Mod đề xuất core → submission pending ─────────────────────────────────
-    if role == "Mod" and scope == "core":
-        try:
-            sub_id = store.insert_submission(
-                link=source_url or "text_input",
-                note=note,
-                submitted_by_role="Mod",
-                tenant_id=tenant_id,
-                raw_text=raw_text,
-            )
-        except Exception as e:
-            logger.error(f"insert_submission thất bại: {e}")
-            return 500, {"error": f"Lỗi DB khi tạo submission: {e}"}
-
-        store.insert_audit(
-            actor_role="Mod",
-            action="ingest",
-            summary=f"Mod đề xuất core — source: {(source_url or raw_text[:80])}",
-            tenant_id=tenant_id,
-            input_hash=input_hash,
-            verdict="pending",
-        )
-        return 200, {
-            "submission_id": sub_id,
-            "status": "pending",
-            "message": (
-                f"Đề xuất #{sub_id} đã ghi nhận. "
-                "Admin cần duyệt qua POST /approve để rule vào core."
-            ),
-        }
-
-    # ── Mod nạp rule tenant (live ngay) hoặc Admin (mọi scope) ────────────────
+    # ── Nạp rule (live ngay cho Mod và Admin) ───────────────────────────────────
     result = authoring.run_authoring_pipeline(raw_text, source_url, _KB_DIR)
 
     # Cho phép warnings về optional fields — chỉ fail nếu lỗi nghiêm trọng
@@ -149,20 +114,15 @@ def handle_ingest(
             "details": result.get("errors"),
         }
 
-    # Scope: Mod chỉ insert tenant/campaign; Admin insert theo scope đã chỉ định
-    actual_scope = scope  # "core" | "tenant" | "campaign"
-    if role == "Mod":
-        actual_scope = scope  # đã validate ≠ core ở trên
-
     try:
         rule_id = store.insert_rule(
             doc_id=result["doc_id"],
             content_layer=result["content_layer"],
-            scope=actual_scope,
+            scope=scope,
             title=result["title"],
             body_md=result["body_md"],
-            tenant_id=tenant_id if actual_scope != "core" else None,
-            campaign_id=campaign_id if actual_scope == "campaign" else None,
+            tenant_id=tenant_id,
+            campaign_id=campaign_id,
             platforms=result.get("platforms", ["all"]),
             metadata_json=result.get("metadata_json", {}),
             source_url=result.get("source_url"),
@@ -212,11 +172,11 @@ def handle_ingest(
         "content_layer": result["content_layer"],
         "title": result["title"],
         "status": "approved",
-        "scope": actual_scope,
+        "scope": scope,
         "reindexed": reindex_ok,
         "message": (
             f"Rule {result['doc_id']} đã được nạp và index "
-            f"(scope={actual_scope})."
+            f"(scope={scope})."
         ),
         "warnings": result.get("errors", []),
     }

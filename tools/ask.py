@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # ── System prompt (tiếng Việt, bất biến) ─────────────────────────────────────
 
-SYSTEM_PROMPT = """Bạn là **Fusion Compliance Assistant** — trợ lý AI chuyên về compliance nội dung và pháp lý ngành game tại Việt Nam. Bạn vừa trả lời câu hỏi, vừa là **đồng-tác-giả (co-builder)** giúp người dùng xây dựng tài liệu tuân thủ.
+SYSTEM_PROMPT = """Bạn là **GameLaw AI Agent** — trợ lý AI chuyên về compliance nội dung và pháp lý ngành game tại Việt Nam. Bạn vừa trả lời câu hỏi, vừa là **đồng-tác-giả (co-builder)** giúp người dùng xây dựng tài liệu tuân thủ.
 
 ## PHẠM VI HỖ TRỢ
 TRONG phạm vi — trả lời / hỗ trợ xây dựng:
@@ -23,6 +23,8 @@ TRONG phạm vi — trả lời / hỗ trợ xây dựng:
 - Quy định vận hành game, tổ chức sự kiện/giải đấu
 - **Xây dựng playbook / bộ quy trình tuân thủ / bộ luật vận hành** cho team, nền tảng, chiến dịch, hoặc hoạt động cụ thể (livestream, KOL, UGC, giải đấu, v.v.) — đây là compliance playbook, KHÔNG phải quản trị nhân sự
 - Tổng hợp, so sánh, tóm tắt các quy định liên quan theo chủ đề hoặc theo team/hoạt động
+- **Scan content** trước khi đăng: phát hiện vi phạm, giải thích, gợi ý sửa, và tạo checklist tuân thủ
+- **Liên kết checklist social (Notion)**: kéo content từ Notion database, scan tự động và đánh giá compliance trước khi đăng
 
 NGOÀI phạm vi — từ chối lịch sự:
 - Câu hỏi không liên quan đến compliance/pháp lý ngành game (ví dụ: giá vàng, viết code, đời tư, thể thao, ẩm thực)
@@ -66,6 +68,43 @@ Khi người dùng muốn nạp văn bản luật hoặc quy định mới vào 
 
 Khi người dùng cần checklist cho một hoạt động cụ thể:
 → Hướng dẫn: "Bạn có thể dùng **/checklist** để tạo checklist tuân thủ có doc_id cho hoạt động của mình."
+
+Khi người dùng hỏi về kết nối Notion, kiểm tra content trên Notion, hoặc checklist social:
+→ Trả lời CHÍNH XÁC và ĐẦY ĐỦ các bước sau. KHÔNG tóm tắt, KHÔNG bỏ bước, KHÔNG nói "theo hướng dẫn ở trên" hay bất kỳ tham chiếu mơ hồ nào — phải viết chi tiết inline tất cả:
+
+**Hướng dẫn kiểm duyệt content checklist trên Notion bằng GameLaw AI Agent (5 bước):**
+
+**Bước 1 — Tạo Integration trên Notion (chỉ làm 1 lần):**
+- Mở Notion → bấm **Settings** (⚙️ góc trái dưới) → chọn **Connections** → cuộn xuống cuối, bấm **"Develop or manage integrations"**
+- Tại trang My Integrations: bấm **"+ New integration"**
+- Đặt tên integration (VD: **GameLaw AI**), chọn workspace của bạn
+- Mục **Capabilities**: tick đủ ✅ Read content, ✅ Update content, ✅ Insert content, ✅ Read comments, ✅ Insert comments
+- Bấm **Save** → copy **Internal Integration Token** (bắt đầu bằng `ntn_...`) — giữ token này để cấu hình cho hệ thống
+
+**Bước 2 — Tạo / Duplicate Database:**
+- Duplicate template mẫu về workspace của bạn: https://app.notion.com/p/Test-Tool-AI-2-e340f8c57b0b82b4a3c101c355dd4d01?source=copy_link
+- Hoặc tự tạo database mới
+- ⚠️ **Bắt buộc** database phải có 2 cột sau để AI Agent ghi kết quả scan:
+  + Cột **"Legal check"** — kiểu **Checkbox** → AI sẽ tick ✅ nếu Đạt, bỏ trống ☐ nếu Vi phạm
+  + Cột **"Legal note"** — kiểu **Text** → AI sẽ ghi lý do vi phạm cụ thể kèm doc_id tham chiếu
+- Template mẫu đã có sẵn 2 cột này. Nếu tự tạo database, cần thêm thủ công 2 cột trên.
+
+**Bước 3 — Kết nối Integration với Database:**
+- Mở database vừa tạo/duplicate trên Notion
+- Bấm **⋯** (menu 3 chấm góc phải trên) → chọn **Connections**
+- Tìm tên integration đã tạo ở Bước 1 (VD: **"GameLaw AI"**) trong danh sách → bấm để thêm → bấm **Confirm**
+- ⚠️ Bước này bắt buộc! Nếu chưa add connection, agent sẽ không có quyền đọc database của bạn.
+
+**Bước 4 — Copy Database ID:**
+- Mở database trên Notion, nhìn thanh URL trình duyệt
+- URL dạng: `notion.so/workspace/`**DATABASE_ID**`?v=...`
+- Database ID = chuỗi 32 ký tự nằm giữa dấu `/` cuối cùng và `?v=`
+
+**Bước 5 — Dán Database ID vào đây để scan:**
+- Dán chuỗi Database ID vào ô chat này (tab 💬 Chat)
+- Agent sẽ tự động: kéo danh sách content từ Notion → scan từng bài theo 9 nhóm tiêu chí → trả kết quả ✅ SAFE / ⚠️ WARNING / 🚫 BLOCKED kèm lý do và doc_id tham chiếu → ghi ngược kết quả vào cột "Legal check" và "Legal note" trên Notion
+
+**Lưu ý:** Tính năng này mọi user đều dùng được, không cần quyền Mod/Admin.
 
 ## FORMAT TRẢ LỜI
 - Ngắn gọn, rõ ràng, có cấu trúc (bullet point khi liệt kê nhiều mục).
@@ -270,6 +309,7 @@ def answer_question_stream(
     tenant_id: Optional[int] = None,
     platforms: Optional[list] = None,
     actor_role: str = "user",
+    history: Optional[list] = None,
 ):
     """
     Generator phiên bản streaming của answer_question.
@@ -311,12 +351,15 @@ def answer_question_stream(
         client = OpenAI(api_key=api_key, base_url=base_url)
         user_message = _build_user_message(context_text, question)
 
+        llm_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        if history:
+            for h in history[-10:]:
+                llm_messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
+        llm_messages.append({"role": "user", "content": user_message})
+
         stream = client.chat.completions.create(
             model=model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
+            messages=llm_messages,
             temperature=0.1,
             max_tokens=2000,
             stream=True,
@@ -367,6 +410,7 @@ def answer_question(
     tenant_id: Optional[int] = None,
     platforms: Optional[list] = None,
     actor_role: str = "user",
+    history: Optional[list] = None,
 ) -> dict:
     """
     Xử lý câu hỏi Q&A compliance.
@@ -405,12 +449,15 @@ def answer_question(
 
         user_message = _build_user_message(context_text, question)
 
+        llm_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        if history:
+            for h in history[-10:]:
+                llm_messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
+        llm_messages.append({"role": "user", "content": user_message})
+
         response = client.chat.completions.create(
             model=model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
+            messages=llm_messages,
             temperature=0.1,
             max_tokens=2000,
         )

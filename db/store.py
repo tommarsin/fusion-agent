@@ -445,9 +445,10 @@ def reset_custom_rules() -> dict:
     conn = _get_conn()
     cur = conn.cursor()
     try:
+        cur.execute("DELETE FROM rule_versions")
+        cur.execute("UPDATE rules SET related_core_doc_id = NULL WHERE related_core_doc_id IS NOT NULL")
         cur.execute("DELETE FROM rules")
         deleted = cur.rowcount
-        cur.execute("DELETE FROM rule_versions")
         conn.commit()
     finally:
         cur.close()
@@ -903,3 +904,138 @@ def insert_audit(
         conn.close()
     except Exception as e:
         logger.warning(f"insert_audit thất bại (non-blocking): {e}")
+
+
+def get_dashboard_stats(days: int = 30) -> dict:
+    """
+    Aggregate usage stats from audit_log for the dashboard.
+    Returns counts by action, by role, by verdict, by day, and totals.
+    """
+    try:
+        conn = _get_conn()
+        cur = conn.cursor()
+
+        # Total counts by action
+        cur.execute(
+            """
+            SELECT action, COUNT(*) FROM audit_log
+            WHERE created_at >= NOW() - INTERVAL '%s days'
+            GROUP BY action ORDER BY COUNT(*) DESC
+            """,
+            (days,),
+        )
+        action_counts = {r[0]: r[1] for r in cur.fetchall()}
+
+        # Total counts by role
+        cur.execute(
+            """
+            SELECT actor_role, COUNT(*) FROM audit_log
+            WHERE created_at >= NOW() - INTERVAL '%s days'
+            GROUP BY actor_role ORDER BY COUNT(*) DESC
+            """,
+            (days,),
+        )
+        role_counts = {r[0]: r[1] for r in cur.fetchall()}
+
+        # Scan verdicts (from audit_log verdict column for scan actions)
+        cur.execute(
+            """
+            SELECT verdict, COUNT(*) FROM audit_log
+            WHERE action IN ('scan', 'notion_scan')
+              AND created_at >= NOW() - INTERVAL '%s days'
+              AND verdict IS NOT NULL
+            GROUP BY verdict ORDER BY COUNT(*) DESC
+            """,
+            (days,),
+        )
+        scan_verdicts = {r[0]: r[1] for r in cur.fetchall()}
+
+        # Activity by day (last N days)
+        cur.execute(
+            """
+            SELECT DATE(created_at) AS day, action, COUNT(*)
+            FROM audit_log
+            WHERE created_at >= NOW() - INTERVAL '%s days'
+            GROUP BY DATE(created_at), action
+            ORDER BY day
+            """,
+            (days,),
+        )
+        daily_raw = cur.fetchall()
+        daily = {}
+        for day, action, count in daily_raw:
+            d = day.isoformat()
+            if d not in daily:
+                daily[d] = {}
+            daily[d][action] = count
+
+        # Scan activity by hour-of-day
+        cur.execute(
+            """
+            SELECT EXTRACT(HOUR FROM created_at)::int AS h, COUNT(*)
+            FROM audit_log
+            WHERE action IN ('scan', 'notion_scan')
+              AND created_at >= NOW() - INTERVAL '%s days'
+            GROUP BY h ORDER BY h
+            """,
+            (days,),
+        )
+        hourly_scan = {r[0]: r[1] for r in cur.fetchall()}
+
+        # Total unique input_hash (rough proxy for unique content scanned)
+        cur.execute(
+            """
+            SELECT COUNT(DISTINCT input_hash) FROM audit_log
+            WHERE action = 'scan'
+              AND input_hash IS NOT NULL
+              AND created_at >= NOW() - INTERVAL '%s days'
+            """,
+            (days,),
+        )
+        unique_scans = cur.fetchone()[0] or 0
+
+        # Total custom rules in DB
+        cur.execute("SELECT COUNT(*) FROM rules WHERE status = 'active'")
+        total_custom_rules = cur.fetchone()[0] or 0
+
+        # Total submissions
+        cur.execute("SELECT status, COUNT(*) FROM rule_submissions GROUP BY status")
+        submission_counts = {r[0]: r[1] for r in cur.fetchall()}
+
+        # Grand total
+        cur.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE created_at >= NOW() - INTERVAL '%s days'",
+            (days,),
+        )
+        total_events = cur.fetchone()[0] or 0
+
+        cur.close()
+        conn.close()
+
+        return {
+            "period_days": days,
+            "total_events": total_events,
+            "action_counts": action_counts,
+            "role_counts": role_counts,
+            "scan_verdicts": scan_verdicts,
+            "daily_activity": daily,
+            "hourly_scan": hourly_scan,
+            "unique_scans": unique_scans,
+            "total_custom_rules": total_custom_rules,
+            "submission_counts": submission_counts,
+        }
+    except Exception as e:
+        logger.error(f"get_dashboard_stats: {e}")
+        return {
+            "period_days": days,
+            "total_events": 0,
+            "action_counts": {},
+            "role_counts": {},
+            "scan_verdicts": {},
+            "daily_activity": {},
+            "hourly_scan": {},
+            "unique_scans": 0,
+            "total_custom_rules": 0,
+            "submission_counts": {},
+            "error": str(e),
+        }
